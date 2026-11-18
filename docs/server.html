@@ -75,6 +75,16 @@
     <p>这一版已经去掉与修图无关的东西：没有社区、没有聊天、没有额度/签到/兑换、没有登录鉴权后台，也去掉了根路径自动跳转的网页出图控制台。
       只保留健康检查与出图接口，接口越少越稳。</p>
     <div class="warn">服务端不是必需的。手机 App 的模型下载走 GitHub 官方源与镜像源，与这个服务端无关；两者不要混用。</div>
+    <h3>预编译二进制（可选，非必须）</h3>
+    <p>随每次发布提供三个包，解压后把 <code>sd-server</code> 放进 <code>bin/</code>、权重放进 <code>models/</code> 即可运行：</p>
+    <ul>
+      <li><code>nert-server-linux-amd64.zip</code>（x86-64 Linux）</li>
+      <li><code>nert-server-linux-386.zip</code>（32 位 Linux / 老 VPS）</li>
+      <li><code>nert-server-windows-amd64.zip</code>（Windows 10/11 64 位）</li>
+    </ul>
+    <p>下载位置：
+      <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/tag/v401-nert">Releases · v401-nert</a>
+      （与 App 安装包在同一个发布页）。</p>
   </div>
 
   <div class="card">
