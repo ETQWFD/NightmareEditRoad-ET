@@ -407,6 +407,28 @@ object EditBatchController {
             .putBoolean("use_img2img", true)
             .apply()
 
+        // 预检模型文件：缺文件时马上给出“能照着做”的解释，而不是让引擎静默失败、界面卡在 0%。
+        val modelDir = File(Model.getModelsDir(app), model.id)
+        if (!modelDir.isDirectory) {
+            return "模型目录不存在：${modelDir.absolutePath}。可能更换过存储路径或目录被清理，" +
+                "请回首页重新下载或重新导入「${model.name}」。"
+        }
+        val layoutOk = runCatching {
+            Model.hasConvertedSd15Outputs(modelDir) ||
+                Model.hasSd15CpuLayout(modelDir) ||
+                File(modelDir, "finished").isFile ||
+                File(modelDir, "model.finished").isFile
+        }.getOrDefault(true)
+        if (!layoutOk) {
+            val listing = modelDir.listFiles()
+                ?.sortedBy { f: File -> f.name }
+                ?.joinToString(", ") { f: File -> "${f.name}(${f.length() / (1024 * 1024)}MB)" }
+                ?: "空目录"
+            return "「${model.name}」的模型文件不完整：CPU 修图需要 tokenizer.json / clip_v2.mnn / unet.mnn / " +
+                "vae_decoder.mnn / pos_emb.bin / token_emb.bin（或已转换标记 finished）。当前目录里有：$listing。" +
+                "请重新下载该模型，或重新导入一次权重文件。"
+        }
+
         if (BackendService.servingModelId.value == model.id &&
             BackendService.backendState.value is BackendService.BackendState.Running &&
             portOpen(app)

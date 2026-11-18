@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 与 NertTheme 的 background 保持一致的冷白，用于启动前的窗口背景。 -->
+    <color name="nert_window_background">#FFF5F7FB</color>
+</resources>

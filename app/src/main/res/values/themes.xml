@@ -1,6 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
-<resources>
-    <style name="Theme.LocalDream" parent="Theme.Material3.DayNight.NoActionBar">
-        <!-- Edge-to-edge is handled by enableEdgeToEdge() in MainActivity -->
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      NERT 的 XML 主题只负责 Compose 画出第一帧之前的那一段（窗口背景、状态栏底色）。
+      固定 Light + 冷白背景：深色模式手机启动时不会再闪一块黑/灰底，
+      真正的配色由 ui/theme/Theme.kt 的 NertTheme（固定冷白板）决定。
+    -->
+    <style name="Theme.LocalDream" parent="Theme.Material3.Light.NoActionBar">
+        <item name="android:windowBackground">@color/nert_window_background</item>
+        <item name="android:colorBackground">@color/nert_window_background</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:windowLightNavigationBar" tools:targetApi="27">true</item>
     </style>
 </resources>
