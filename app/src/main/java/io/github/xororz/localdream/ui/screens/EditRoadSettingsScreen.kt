@@ -29,6 +29,7 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Language
+import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
@@ -70,7 +71,10 @@ private const val NERT_GROUP_URL =
         "&noverify=0&group_code=1078799843"
 
 @Composable
-fun EditRoadSettingsScreen(bottomPadding: Dp = 104.dp) {
+fun EditRoadSettingsScreen(
+    bottomPadding: Dp = 104.dp,
+    onOpenCpu: (() -> Unit)? = null,
+) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var steps by remember { mutableIntStateOf(EditRoadPrefs.steps(context)) }
@@ -177,6 +181,18 @@ fun EditRoadSettingsScreen(bottomPadding: Dp = 104.dp) {
                             )
                             Text(label, style = MaterialTheme.typography.bodyMedium)
                         }
+                    }
+                }
+            }
+
+            if (onOpenCpu != null) {
+                item {
+                    SettingsCard(Icons.Default.Memory, "CPU 压力 / 线程") {
+                        SettingsLinkRow(
+                            title = "实时占用 · 引擎线程 · 压力测试",
+                            subtitle = "打开性能面板：查看 CPU 占用与频率、调整引擎线程数",
+                            onClick = { onOpenCpu?.invoke() },
+                        )
                     }
                 }
             }

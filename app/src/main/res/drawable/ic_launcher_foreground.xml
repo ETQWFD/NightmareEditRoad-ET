@@ -10,47 +10,47 @@
 
     <!-- N -->
     <path android:pathData="M212,600 L212,424" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M212,424 L300,600" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M300,600 L300,424" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 
     <!-- E -->
     <path android:pathData="M368,424 L368,600" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M368,424 L456,424" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M368,512 L446,512" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M368,600 L456,600" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 
     <!-- R -->
     <path android:pathData="M520,600 L520,424 L578,424 A44,44 0 0 1 578,512 L520,512"
         android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M552,512 L604,600" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 
     <!-- T -->
     <path android:pathData="M656,424 L784,424" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
     <path android:pathData="M720,424 L720,600" android:fillColor="#00000000"
-        android:strokeColor="#10161C" android:strokeWidth="40"
+        android:strokeColor="#10161C" android:strokeWidth="62"
         android:strokeLineCap="round" android:strokeLineJoin="round" />
 
     <!-- cool-blue spark, the only accent -->
-    <path android:pathData="M612,556 m-13,0 a13,13 0 1,0 26,0 a13,13 0 1,0 -26,0"
+    <path android:pathData="M612,556 m-17,0 a17,17 0 1,0 34,0 a17,17 0 1,0 -34,0"
         android:fillColor="#2F6DF6" android:strokeColor="#00000000" android:strokeWidth="0" />
 </vector>

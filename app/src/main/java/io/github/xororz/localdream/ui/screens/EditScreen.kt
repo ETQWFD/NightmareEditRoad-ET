@@ -396,7 +396,7 @@ fun EditScreen(
                 }
                 TextButton(onClick = { EditBatchController.stop(context) }) { Text("停止本次修图") }
                 Text(
-                    "可以切到“历史 / CPU压力 / 设置”，修图不会中断，回来仍是原来的进度。",
+                    "可以切到“历史 / 设置”，修图不会中断，回来仍是原来的进度。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

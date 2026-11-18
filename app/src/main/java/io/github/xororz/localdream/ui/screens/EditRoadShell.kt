@@ -19,9 +19,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoFixHigh
+import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.History
-import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material3.Button
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -49,15 +50,16 @@ import io.github.xororz.localdream.data.EditRoadPrefs
 import io.github.xororz.localdream.data.Model
 import io.github.xororz.localdream.data.ModelRepository
 
+private const val TAB_HOME = "home"
 private const val TAB_HISTORY = "history"
-private const val TAB_CPU = "cpu"
 private const val TAB_EDIT = "edit"
 private const val TAB_SETTINGS = "settings"
 
 /**
- * 四个页面（历史 / CPU压力 / 修改 / 设置）始终同时存在于组合树里，只切换可见层。
- * 这样修图生成过程中切到任意页，BackgroundGenerationService 与修图页的进度状态
- * 都不会被销毁；切回“修改”时仍在原来的进度上继续。
+ * 四个常驻页面：模型（下载 / 导入）、历史、修改、设置。
+ * 所有页面同时保留在组合树里，只切换可见层：修图生成过程中切到任意页都不会中断；
+ * 切回“修改”时仍停在原来的进度上。CPU 压力 / 线程面板从设置页进入，作为覆盖层，
+ * 不占用底部 Dock 的四个位置。
  */
 @Composable
 fun EditRoadShell() {
@@ -73,9 +75,10 @@ fun EditRoadShell() {
             .sortedBy { it.name }
     }
 
-    var tab by rememberSaveable { mutableStateOf(TAB_EDIT) }
+    var tab by rememberSaveable { mutableStateOf(TAB_HOME) }
     var selectedId by rememberSaveable { mutableStateOf(EditRoadPrefs.lastModelId(context)) }
     var restored by rememberSaveable { mutableStateOf(false) }
+    var showCpu by rememberSaveable { mutableStateOf(false) }
 
     LaunchedEffect(repository.isLoaded, editableModels.size) {
         if (!repository.isLoaded) return@LaunchedEffect
@@ -91,21 +94,27 @@ fun EditRoadShell() {
 
     val selectedModel = editableModels.firstOrNull { it.id == selectedId }
 
-    BackHandler(enabled = tab != TAB_EDIT) {
-        tab = TAB_EDIT
-    }
+    BackHandler(enabled = showCpu) { showCpu = false }
+    BackHandler(enabled = tab != TAB_HOME) { tab = TAB_HOME }
 
     Surface(
         modifier = Modifier.fillMaxSize(),
         color = MaterialTheme.colorScheme.background,
     ) {
         Box(Modifier.fillMaxSize()) {
-            KeepAliveLayer(visible = tab == TAB_HISTORY) {
-                EditRoadHistoryScreen(bottomPadding = 104.dp)
+            KeepAliveLayer(visible = tab == TAB_HOME) {
+                EditRoadHomeScreen(
+                    onOpenModel = { model ->
+                        selectedId = model.id
+                        EditRoadPrefs.setLastModelId(context, model.id)
+                        tab = TAB_EDIT
+                    },
+                    bottomPadding = 104.dp,
+                )
             }
 
-            KeepAliveLayer(visible = tab == TAB_CPU) {
-                CpuPressureScreen(active = tab == TAB_CPU, bottomPadding = 104.dp)
+            KeepAliveLayer(visible = tab == TAB_HISTORY) {
+                EditRoadHistoryScreen(bottomPadding = 104.dp)
             }
 
             KeepAliveLayer(visible = tab == TAB_EDIT) {
@@ -117,34 +126,70 @@ fun EditRoadShell() {
                             selectedId = chosen.id
                             EditRoadPrefs.setLastModelId(context, chosen.id)
                         },
-                        onBack = { selectedId = null },
+                        onBack = {
+                            selectedId = null
+                            tab = TAB_HOME
+                        },
                         active = tab == TAB_EDIT,
                         bottomPadding = 104.dp,
                     )
                 } else {
-                    EditRoadHomeScreen(
-                        onOpenModel = { model ->
-                            selectedId = model.id
-                            EditRoadPrefs.setLastModelId(context, model.id)
-                            tab = TAB_EDIT
-                        },
-                        bottomPadding = 104.dp,
-                    )
+                    EmptyEditState(onPick = { tab = TAB_HOME })
                 }
             }
 
             KeepAliveLayer(visible = tab == TAB_SETTINGS) {
-                EditRoadSettingsScreen(bottomPadding = 104.dp)
+                EditRoadSettingsScreen(
+                    onOpenCpu = { showCpu = true },
+                    bottomPadding = 104.dp,
+                )
+            }
+
+            KeepAliveLayer(visible = showCpu) {
+                CpuPressureScreen(active = true, bottomPadding = 104.dp)
             }
 
             GlassDock(
                 tab = tab,
-                onTab = { tab = it },
+                onTab = { tab = it; if (it != TAB_SETTINGS) showCpu = false },
                 modifier = Modifier
                     .align(Alignment.BottomCenter)
                     .navigationBarsPadding()
-                    .padding(start = 14.dp, end = 14.dp, bottom = 12.dp),
+                    .padding(start = 14.dp, end = 14.dp, bottom = 12.dp)
+                    .zIndex(2f),
             )
+        }
+    }
+}
+
+@Composable
+private fun EmptyEditState(onPick: () -> Unit) {
+    Box(
+        Modifier.fillMaxSize().padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Surface(
+            shape = RoundedCornerShape(20.dp),
+            color = Color(0xF2FFFFFF),
+            border = BorderStroke(1.dp, Color(0x66FFFFFF)),
+            shadowElevation = 2.dp,
+            modifier = Modifier.fillMaxWidth(),
+        ) {
+            Column(Modifier.padding(24.dp), horizontalAlignment = Alignment.CenterHorizontally) {
+                Text("还没有选中模型", style = MaterialTheme.typography.titleMedium)
+                Spacer(Modifier.height(8.dp))
+                Text(
+                    "先到“模型”页下载或导入一个模型，点它就能进入修图。",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+                Spacer(Modifier.height(16.dp))
+                Button(onClick = onPick, modifier = Modifier.fillMaxWidth()) {
+                    Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Spacer(Modifier.width(6.dp))
+                    Text("去模型页")
+                }
+            }
         }
     }
 }
@@ -181,11 +226,11 @@ private fun GlassDock(tab: String, onTab: (String) -> Unit, modifier: Modifier =
                 .padding(horizontal = 6.dp, vertical = 6.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            DockTab(Icons.Default.CloudDownload, "模型", tab == TAB_HOME, Modifier.weight(1f)) {
+                onTab(TAB_HOME)
+            }
             DockTab(Icons.Default.History, "历史", tab == TAB_HISTORY, Modifier.weight(1f)) {
                 onTab(TAB_HISTORY)
-            }
-            DockTab(Icons.Default.Memory, "CPU压力", tab == TAB_CPU, Modifier.weight(1f)) {
-                onTab(TAB_CPU)
             }
             DockTab(Icons.Default.AutoFixHigh, "修改", tab == TAB_EDIT, Modifier.weight(1f)) {
                 onTab(TAB_EDIT)
