@@ -338,15 +338,7 @@ class BackgroundGenerationService : Service() {
 
         Log.d("GenerationService", "params: steps=$steps, cfg=$cfg, seed=$seed")
 
-        // et.118/build195 quota gate: refuse when the 7-day budget is exhausted.
-        val quotaCost = QuotaManager.cost(steps, width, height)
-        if (!QuotaManager.available(this@BackgroundGenerationService)) {
-            updateState(
-                GenerationState.Error("额度不足，无法生成图片（等7天自动重置）"),
-            )
-            return START_NOT_STICKY
-        }
-        QuotaManager.consume(this@BackgroundGenerationService, quotaCost)
+        // 噩梦修改之路-ET 没有账号与额度：本地修图不计费、不限次数。
 
         if (_generationState.value is GenerationState.Complete) {
             updateState(GenerationState.Idle)
@@ -378,15 +370,11 @@ class BackgroundGenerationService : Service() {
                     ultrafixTileSize,
                     backendHost,
                 )
-                // Success: report usage (non-blocking).
-                QuotaManager.report(this@BackgroundGenerationService)
             } catch (e: CancellationException) {
-                QuotaManager.refund(this@BackgroundGenerationService, quotaCost)
                 throw e
             } catch (t: Throwable) {
-                // et.130追加10: catch Throwable (not just Exception) so native
-                // Errors / UnsatisfiedLinkError cannot crash the app; refund + report.
-                QuotaManager.refund(this@BackgroundGenerationService, quotaCost)
+                // catch Throwable (not just Exception) so native Errors /
+                // UnsatisfiedLinkError cannot crash the app.
                 throw t
             }
         }
@@ -598,8 +586,6 @@ class BackgroundGenerationService : Service() {
                 }
                 if (!ok) throw IOException("引擎启动失败：端口 $port 30秒内未就绪，模型文件可能损坏，请重新下载")
             }
-            // et.57: optional background music while generating.
-            io.github.xororz.localdream.utils.BgmManager.start(this@BackgroundGenerationService)
             val call = generationClient.newCall(request)
             activeCall = call
             call.execute().use { response ->
@@ -1312,13 +1298,11 @@ class BackgroundGenerationService : Service() {
                     else ->
                         "生成失败(exit=$code)：${e.message ?: "原生退出"}，详见 engine_*.log 末行。"
                 }
-                // et.131: tell the user the consumed quota was refunded.
-                updateState(GenerationState.Error("$msg\n（生成失败，已返还额度，请重试）"))
+                updateState(GenerationState.Error(msg))
             }
             stopSelf()
         } finally {
             activeCall = null
-            io.github.xororz.localdream.utils.BgmManager.stop(this@BackgroundGenerationService)
             io.github.xororz.localdream.service.BackendService.notifyGenerationEnded()
             // et.57: release the idle engine when the LAN "API 连接" service is NOT running,
             // so the engine does not keep holding memory after a normal local generation.

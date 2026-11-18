@@ -911,12 +911,17 @@ class BackendService : Service() {
             // the DYNAMIC big-core count (read per-cpu max freq from sysfs, not hardcoded
             // indices), and keep OMP_NUM_THREADS for any native BLAS that still honors it.
             val bigCores = io.github.xororz.localdream.utils.DeviceCapabilities.bigCoreCount()
-            env["RAYON_NUM_THREADS"] = bigCores.toString()
-            env["RAYON_RS_NUM_CPUS"] = bigCores.toString()
-            env["OMP_NUM_THREADS"] = bigCores.toString()
+            // CPU 压力页允许手动指定线程数；0 / 越界时仍按大核数自动。
+            val allCores = Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val manualThreads = getSharedPreferences("app_prefs", MODE_PRIVATE)
+                .getInt("cpu_threads", 0)
+            val workerThreads = if (manualThreads in 1..allCores) manualThreads else bigCores
+            env["RAYON_NUM_THREADS"] = workerThreads.toString()
+            env["RAYON_RS_NUM_CPUS"] = workerThreads.toString()
+            env["OMP_NUM_THREADS"] = workerThreads.toString()
             // et.244：MNN 会话线程数之前在后端源码里硬编码 4，8 核天玑/骁龙
             // 只用 4 个小核组，出图明显偏慢。自编译的引擎现在读这个变量。
-            env["SD_NUM_THREADS"] = bigCores.toString()
+            env["SD_NUM_THREADS"] = workerThreads.toString()
 
             // et.146: 天玑 9400/9400+（Mali Immortalis 新驱动）上 sd15cpu 引擎
             // 初始化 OpenCL fused projection 时直接退出(exit=0)。检测 MediaTek 平台，
@@ -961,7 +966,7 @@ class BackendService : Service() {
                     Log.i(TAG, "MediaTek 低端/未知平台：强制 CPU 后端，已禁用 OpenCL fused projection")
                 }
             }
-            Log.i(TAG, "engine threads: RAYON/OMP=$bigCores of ${Runtime.getRuntime().availableProcessors()} cores (big-core count by max-freq)")
+            Log.i(TAG, "engine threads: RAYON/OMP=$workerThreads of $allCores cores (manual=$manualThreads, autoBig=$bigCores)")
             if (ditEngineDir != null) {
                 // ggml-hexagon asks FastRPC for its skel by bare name, so both
                 // the runtime directory holding the skels and the platform

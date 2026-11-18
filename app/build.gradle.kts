@@ -54,12 +54,13 @@ android {
         // independently of the upstream "Local Dream" package.
         // et.21: renamed to the requested etc.github.ai (new, independent app;
         // models live in the shared public folder and are unaffected).
-        applicationId = "etc.github.ai"
+        // 噩梦修改之路-ET：独立包名，可与原版共存；只做本地修图 + 模型下载。
+        applicationId = "etc.editroad.et"
         minSdk = 28
 //        minSdk = 31
         targetSdk = 36
-        versionCode = 319
-        versionName = "4.0.0-et.245"
+        versionCode = 401
+        versionName = "1.1.0-nert"
 
         // et.26: GitHub OAuth Device Flow client_id. Empty => device-flow entry
         // is shown disabled (no request, no fake login). Device flow needs no secret.
@@ -78,8 +79,9 @@ android {
             // app/src/main/cpp/build.sh and placed in jniLibs/<abi>/ before a
             // fully functional APK is assembled. QNN NPU libraries ship for
             // aarch64 only; the v7a build is CPU/GPU.
+            // 只出两种真机架构：64 位 arm64-v8a（高配）与 32 位 armeabi-v7a（低配）。
             //noinspection ChromeOsAbiSupport
-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
         }
     }
 
@@ -189,7 +191,7 @@ androidComponents {
         variant.outputs.forEach { output ->
             val versionName = output.versionName.orNull
             if (output is com.android.build.api.variant.impl.VariantOutputImpl) {
-                output.outputFileName.set("LocalDream-ET_${variant.name}_$versionName.apk")
+                output.outputFileName.set("NightmareEditRoad-ET_${variant.name}_$versionName.apk")
             }
         }
     }

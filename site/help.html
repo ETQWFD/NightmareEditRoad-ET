@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NERT 帮助 — 安装、模型下载与导入、修图失败排查、预计时间原理、机型建议与加群反馈。">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="assets/icon.png">
+<title>帮助 · NERT</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --ink:#0f1216; --mut:#5d6570; --line:rgba(15,18,22,.10);
+    --glass:rgba(255,255,255,.72); --glass-strong:rgba(255,255,255,.9);
+    --shadow:0 10px 34px rgba(24,32,44,.10); --accent:#2f6df6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(44% 38% at 10% 6%, rgba(120,170,255,.26), transparent 60%),
+      radial-gradient(42% 40% at 90% 10%, rgba(190,205,255,.22), transparent 62%),
+      linear-gradient(180deg,#fdfdfe,#eef1f5 65%,#e9edf2)}
+  body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.4;
+    background-image:radial-gradient(rgba(15,18,22,.15) 1px,transparent 1px);background-size:22px 22px}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:900px;margin:0 auto;padding:0 20px}
+  header{position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(1.4);
+    background:rgba(255,255,255,.62);border-bottom:1px solid var(--line)}
+  nav{display:flex;align-items:center;gap:8px;height:62px}
+  .logo{font-weight:800;letter-spacing:.14em;font-size:20px;color:var(--ink)}
+  .logo span{color:var(--accent)}
+  nav .links{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);font-size:14px;color:var(--mut)}
+  .chip.on,.chip:hover{color:var(--ink);background:var(--glass-strong);border-color:rgba(47,109,246,.35)}
+  h1{font-size:clamp(28px,5vw,42px);margin:44px 0 10px;letter-spacing:-.4px;color:var(--ink)}
+  .lead{color:var(--mut);margin:0 0 22px;font-size:17px}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}
+  .toc a{font-size:13.5px;padding:6px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--line);color:var(--ink)}
+  details{background:var(--glass);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.75);
+    box-shadow:var(--shadow);border-radius:16px;padding:4px 18px;margin:0 0 12px}
+  details[open]{background:var(--glass-strong)}
+  summary{cursor:pointer;font-weight:600;font-size:16px;padding:12px 0;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"›";display:inline-block;margin-right:10px;transition:.2s;color:var(--accent)}
+  details[open] summary::before{transform:rotate(90deg)}
+  details p{margin:0 0 12px;color:#2c3238;font-size:14.8px}
+  details ul{margin:0 0 12px;padding-left:20px;color:#2c3238;font-size:14.8px}
+  details li{margin:4px 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;background:rgba(15,18,22,.06);padding:2px 6px;border-radius:6px}
+  table{width:100%;border-collapse:collapse;font-size:14px;background:var(--glass-strong);border-radius:14px;overflow:hidden;margin:0 0 12px}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}
+  th{font-size:12.5px;color:var(--mut);text-transform:uppercase}
+  tr:last-child td{border-bottom:0}
+  .box{background:var(--glass);border:1px solid rgba(255,255,255,.75);box-shadow:var(--shadow);border-radius:18px;padding:18px 20px;margin:22px 0}
+  .box h2{margin:0 0 8px;font-size:19px}
+  footer{margin:34px 0 40px;padding-top:22px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap"><nav>
+    <div class="logo">N<span>E</span>RT</div>
+    <div class="links">
+      <a class="chip" href="index.html">首页</a>
+      <a class="chip" href="server.html">服务端</a>
+      <a class="chip on" href="help.html">帮助</a>
+      <a class="chip" href="https://github.com/ETQWFD/NightmareEditRoad-ET">仓库</a>
+    </div>
+  </nav></div>
+</header>
+
+<div class="wrap">
+  <h1>帮助与排查</h1>
+  <p class="lead">先说结论：<b>修图失败一定要看弹窗里的日志</b>，复制或截图发给我，比描述“卡住了”有用一百倍。</p>
+
+  <div class="toc">
+    <a href="#install">安装</a><a href="#model">模型下载 / 导入</a><a href="#zero">卡在 0%</a>
+    <a href="#engine">引擎无法加载</a><a href="#eta">预计时间</a><a href="#switch">切页中断</a>
+    <a href="#steps">步数与画质</a><a href="#perf">低配 / 高配</a><a href="#lang">语言与提示语</a>
+    <a href="#update">检查更新</a><a href="#contact">加群反馈</a>
+  </div>
+
+  <details id="install" open>
+    <summary>怎么安装 / 装完打不开</summary>
+    <p>1）在 <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/latest">Releases</a> 下载 <code>NERT_*.apk</code>（一个 APK 同时含 32 位与 64 位原生库，老机新机都是同一个包）。</p>
+    <p>2）首次安装允许“未知来源”。安装后打开，系统只会问两件事：Android 13+ 的通知权限（用于下载/修图进度），Android 9/10 的存储权限（用于读写图片）。</p>
+    <ul>
+      <li>打不开 / 秒退：卸载重装，或把 <code>Android/data/etc.editroad.et</code> 与下载目录里的残留删掉再装。</li>
+      <li>MIUI / ColorOS / OriginOS：在电池设置里把 NERT 设为“无限制”，否则锁屏后会被系统杀掉（表现为修图突然不动）。</li>
+    </ul>
+  </details>
+
+  <details id="model">
+    <summary>模型下载太慢、失败，或者想用自己下载的模型</summary>
+    <p><b>下载</b>：首页列表点模型 → 确认体积 → 下载。设置里可以切换下载源：<code>自动</code>（按网络择优）、<code>国内镜像</code>、<code>官方源</code>。镜像不通时手动换成官方源，反之亦然。</p>
+    <p><b>自己导入</b>：首页“自己导入模型”卡片 →</p>
+    <ul>
+      <li><b>本地文件</b>：选手机里的 <code>.safetensors</code> / <code>.ckpt</code>（SD1.5 架构），应用会在本机转换成可用格式，进度显示在首页卡片里，可以切到别的页面，转换不会中断。</li>
+      <li><b>链接导入</b>：粘贴 HuggingFace 的模型链接，应用会登记成一个自定义模型并开始下载 + 转换。</li>
+      <li>导入的模型同样出现在修图页顶部的切换列表里，也能随时切回去。</li>
+    </ul>
+    <p>注意：SDXL、Flux、DiT 等新架构以及 NPU 专用包不能用于本机修图链路，导入后只会出现在完整模型列表，不会进入修图切换列表。</p>
+  </details>
+
+  <details id="zero">
+    <summary>进度一直是 0%、按钮显示“修图中…”却不动</summary>
+    <p>这一版已经把“假 0%”当成缺陷处理：修图由独立的批量控制器执行，界面只订阅它的状态，所以不再有“离开页面就把任务取消”的问题（旧版报 <code>rememberCoroutineScope left the composition</code>）。</p>
+    <p>现在如果引擎没起来，会明确告诉你原因并弹日志窗：</p>
+    <ul>
+      <li><b>200 秒内引擎没就绪</b> → 弹窗会给出引擎启动日志末尾、退出码含义（137=内存不足被系统杀，134/139=原生崩溃）、内存与存储余量。</li>
+      <li><b>连上了但 150 秒没有第一个 step</b> → 判定为引擎无首步进度，弹窗带请求参数与端口状态。</li>
+      <li><b>某个 step 后 20 分钟不动</b> → 判定卡死，主动结束并弹日志。</li>
+    </ul>
+    <p>自查顺序：换一个更小的模型 → 设置里把渲染器从 GPU 改成 CPU → CPU 压力页把线程数调成“大核数”→ 关掉其它占用内存的应用。</p>
+  </details>
+
+  <details id="engine">
+    <summary>提示“模型引擎无法加载”</summary>
+    <p>常见三种：</p>
+    <ul>
+      <li><b>模型文件不完整</b>：日志窗里会列出模型目录文件清单。缺 <code>vae</code> / <code>unet</code> / <code>text_encoder</code> 时，回首页对该模型重新下载或重新导入。</li>
+      <li><b>内存不够</b>：32 位进程可用内存有限。日志窗会显示总内存、可用内存、位数与线程数；把步数降到 20–30、一次只修 1 张。</li>
+      <li><b>GPU 驱动不兼容</b>：设置里把渲染器切到 CPU；应用本身也会在 GPU 失败时回退 CPU，并把 <code>gpu_unstable</code> 记进日志。</li>
+    </ul>
+  </details>
+
+  <details id="eta">
+    <summary>“预计剩余时间”准不准</summary>
+    <p>第一张是估算：按 <code>实测单步耗时 × 步数 × 队列张数</code>，没有实测值时按机型档位给保守估算。</p>
+    <p><b>每完成一张，应用会实测这一步的真实耗时并记住</b>（<code>editroad_ms_per_step</code>），后续同一机型的预计就会明显贴合实际。切到别的标签页或锁屏期间产生的耗时也会被算进去，不会“预计 27 秒然后一动不动”。</p>
+    <p>如果你发现预计长期偏大或偏小，把日志窗内容发我，我按机型再调系数。</p>
+  </details>
+
+  <details id="switch">
+    <summary>生成中途切页面会不会中断</summary>
+    <p>不会。底部四栏（历史 / CPU压力 / 修改 / 设置）都是常驻的，切换时不销毁任务；生成中切换模型会被拒绝并提示，避免修到一半换模型。CPU 压力页还会实时显示“修图中 x%（i/N 张）”。</p>
+  </details>
+
+  <details id="steps">
+    <summary>步数该设多少</summary>
+    <p>默认 <b>40</b>，滑杆可设 10–100，另有 20 / 30 / 40 / 60 / 80 快捷档。经验：</p>
+    <table>
+      <thead><tr><th>步数</th><th>适合</th><th>代价</th></tr></thead>
+      <tbody>
+        <tr><td>10–20</td><td>快速试构图、低配手机</td><td>细节偏软</td></tr>
+        <tr><td>30–50</td><td>日常修图（推荐区间）</td><td>耗时线性增长</td></tr>
+        <tr><td>60–100</td><td>发丝、织物、手部等细节</td><td>中低配手机耗时明显增加，画质收益递减</td></tr>
+      </tbody>
+    </table>
+    <p>尺寸、CFG、重绘强度和防畸形反向词都不需要你手动填：输出长边按运行内存自动选（384 / 512 / 640 / 768），一次最多 16 张，超过 1536 长边的原图会先等比缩放。</p>
+  </details>
+
+  <details id="perf">
+    <summary>低配 / 中配 / 高配怎么更快</summary>
+    <ul>
+      <li><b>低配（3–4 GB、32 位）</b>：渲染器选 CPU，步数 20–30，一次 1 张，线程数设 2–4。</li>
+      <li><b>中配（6 GB）</b>：默认自动（优先 GPU，失败回退 CPU），步数 40。</li>
+      <li><b>高配（10 GB+）</b>：可以放心 60–100 步 + 批量，CPU 压力页用 6 秒压力测试确认大核都在跑。</li>
+      <li>线程数设为“自动”时会用大核数；手动改小可降温，改大不一定更快（小核拖慢整体）。</li>
+    </ul>
+  </details>
+
+  <details id="lang">
+    <summary>提示语能不能写中文？界面语言怎么换</summary>
+    <p>提示语中文、英文都可以，也可以中英混写。中文提示语会先翻译成模型能理解的英文再进模型；翻译服务不可用时会退回内置离线词典，不会因此失败。留空则只做画质增强，几乎不动原图内容。</p>
+    <p>界面语言在设置页切换：简体中文 / English / 日本語（三档）。切换后建议重启一次应用，个别文字来自静态文案。</p>
+  </details>
+
+  <details id="update">
+    <summary>检查更新走的是哪里</summary>
+    <p>设置页“检查更新”读取新仓库的最新发布：<code>api.github.com/repos/ETQWFD/NightmareEditRoad-ET/releases/latest</code>，
+      并按本机 CPU 架构选择对应安装包。若提示“无法获取版本信息”，多数是网络不通（无法访问 api.github.com），可以换网络或挂代理再试。</p>
+  </details>
+
+  <div class="box" id="contact">
+    <h2>反馈与加群</h2>
+    <p>遇到任何问题，请带上：版本号、机型、Android 版本、失败弹窗里复制的日志、（可选）截图或录屏。</p>
+    <p>QQ 群：<b>1078799843</b> · <a href="http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&amp;k=FEhaN_bPJIhurqBLoRhqkhmHnkRz17bu&amp;authKey=6nfqCQdGizOwMqbcBD0tfYcueiFQJmGHHefDFFBt0j0jT%2FqSP6dVif%2FZ39%2FfGRc3&amp;noverify=0&amp;group_code=1078799843">点此加群</a></p>
+    <p>仓库与 Issue：<a href="https://github.com/ETQWFD/NightmareEditRoad-ET">github.com/ETQWFD/NightmareEditRoad-ET</a></p>
+  </div>
+
+  <div class="box">
+    <h2>这个 App 不包含的东西</h2>
+    <p>没有登录、没有额度、没有签到兑换、没有音乐后台、没有图片社区与聊天社区、没有图片上传。所有修图都在本机完成，图片不会离开你的手机。</p>
+  </div>
+
+  <footer>
+    NERT · <a href="index.html">首页</a> · <a href="server.html">服务端</a> ·
+    <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/latest">下载</a>
+  </footer>
+</div>
+</body>
+</html>

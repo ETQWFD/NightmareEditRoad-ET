@@ -35,3 +35,10 @@ docs/*.apk
 chatclient/build/
 app/build/
 server-go/dist/
+
+# 签名密钥绝不入库
+*.jks
+*.keystore.properties
+
+# 本地构建产物（服务端二进制、临时目录）
+/dist/

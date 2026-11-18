@@ -7,8 +7,6 @@ import android.content.pm.PackageManager
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
-import android.os.Environment
-import android.provider.Settings
 import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -17,53 +15,21 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.material3.Text
 import androidx.compose.ui.Modifier
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material.icons.filled.Feedback
-import androidx.compose.ui.unit.dp
-import androidx.compose.material3.OutlinedTextField
 import androidx.core.content.ContextCompat
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
-import io.github.xororz.localdream.data.MigrationState
-import io.github.xororz.localdream.navigation.Screen
-import io.github.xororz.localdream.ui.screens.HistoryScreen
-import io.github.xororz.localdream.ui.screens.MigrationScreen
-import io.github.xororz.localdream.ui.screens.ModelListScreen
-import io.github.xororz.localdream.ui.screens.ModelRunScreen
-import io.github.xororz.localdream.ui.screens.RemoteScreen
-import io.github.xororz.localdream.ui.screens.UpscaleScreen
-import io.github.xororz.localdream.ui.theme.LocalDreamTheme
-import io.github.xororz.localdream.ui.theme.LocalThemeController
+import io.github.xororz.localdream.ui.screens.EditRoadShell
+import io.github.xororz.localdream.ui.theme.NertTheme
 import io.github.xororz.localdream.utils.LocaleManager
-import io.github.xororz.localdream.ui.theme.rememberThemeController
-import io.github.xororz.localdream.ui.theme.sharedAxisXEnter
-import io.github.xororz.localdream.ui.theme.sharedAxisXExit
-import io.github.xororz.localdream.ui.theme.sharedAxisXPopEnter
-import io.github.xororz.localdream.ui.theme.sharedAxisXPopExit
-import io.github.xororz.localdream.ui.theme.sharedAxisXPredictivePopEnter
-import io.github.xororz.localdream.ui.theme.sharedAxisXPredictivePopExit
 
+/**
+ * 噩梦修改之路-ET 的唯一入口。
+ *
+ * 与原版相比，这里不再有社区 / 聊天 / 登录 / 额度 / 音乐 / 公告 / 定位上报，
+ * 只保留：
+ *   - 首页（模型下载 + 进入修图）
+ *   - 修图页（多图批量本地 img2img）
+ *   - 本地历史
+ */
 class MainActivity : ComponentActivity() {
 
     override fun attachBaseContext(newBase: Context) {
@@ -82,26 +48,11 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    // Android 11+: "All files access" lives in a system settings screen, not a
-    // normal runtime dialog. On return we verify and create the public folder.
-    private val allFilesAccessLauncher = registerForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R && !Environment.isExternalStorageManager()) {
-            Toast.makeText(
-                this,
-                getString(R.string.permission_storage_required),
-                Toast.LENGTH_LONG,
-            ).show()
-        } else {
-            io.github.xororz.localdream.utils.Storage.publicRoot().mkdirs()
-        }
-    }
-
     private val requestNotificationPermissionLauncher = registerForActivityResult(
         ActivityResultContracts.RequestPermission(),
     ) { isGranted: Boolean ->
         if (!isGranted) {
+            // 只是前台服务进度通知，拒绝也不影响下载/修图。
             Toast.makeText(
                 this,
                 getString(R.string.permission_notification_required),
@@ -110,42 +61,13 @@ class MainActivity : ComponentActivity() {
         }
     }
 
-    private fun checkStoragePermission() {
-        // Android 11 (API 30) and above: All files access for the shared folder.
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-            if (!Environment.isExternalStorageManager()) {
-                Toast.makeText(
-                    this,
-                    getString(R.string.permission_storage_required),
-                    Toast.LENGTH_LONG,
-                ).show()
-                val intent = Intent(Settings.ACTION_MANAGE_APP_ALL_FILES_ACCESS_PERMISSION).apply {
-                    data = Uri.parse("package:$packageName")
-                    addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                }
-                runCatching {
-                    allFilesAccessLauncher.launch(intent)
-                }.getOrElse {
-                    // Some devices lack the per-app screen: open the generic list.
-                    allFilesAccessLauncher.launch(
-                        Intent(Settings.ACTION_MANAGE_ALL_FILES_ACCESS_PERMISSION)
-                            .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
-                    )
-                }
-            } else {
-                io.github.xororz.localdream.utils.Storage.publicRoot().mkdirs()
-            }
-            return
-        }
-
-        // API 28–29: classic runtime storage permission.
+    private fun checkLegacyStoragePermission() {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) return
         when {
             ContextCompat.checkSelfPermission(
                 this,
                 Manifest.permission.WRITE_EXTERNAL_STORAGE,
-            ) == PackageManager.PERMISSION_GRANTED -> {
-                // ok
-            }
+            ) == PackageManager.PERMISSION_GRANTED -> Unit
 
             shouldShowRequestPermissionRationale(Manifest.permission.WRITE_EXTERNAL_STORAGE) -> {
                 Toast.makeText(
@@ -156,625 +78,59 @@ class MainActivity : ComponentActivity() {
                 requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
             }
 
-            else -> {
-                requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-            }
+            else -> requestStoragePermissionLauncher.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
         }
     }
 
     private fun checkNotificationPermission() {
-        // > Android 13
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             when {
                 ContextCompat.checkSelfPermission(
                     this,
                     Manifest.permission.POST_NOTIFICATIONS,
-                ) == PackageManager.PERMISSION_GRANTED -> {
-                    // ok
-                }
+                ) == PackageManager.PERMISSION_GRANTED -> Unit
 
                 shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS) -> {
-                    Toast.makeText(
-                        this,
-                        getString(R.string.permission_notification_required),
-                        Toast.LENGTH_LONG,
-                    ).show()
                     requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
                 }
 
-                else -> {
-                    requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
-                }
+                else -> requestNotificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
             }
         }
     }
-
-    private val announceDialog = androidx.compose.runtime.mutableStateOf<Triple<String, String, Long>?>(null)
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        handleGithubOAuth(this, intent)
-        // et.168: 只有图片社区需要防截图/录屏；全局 FLAG_SECURE 会把公共聊天
-        // 也一起锁死，导致用户“聊天不能截图”。聊天保持可截图，社区页单独加锁
-        // （见 GalleryScreen 的 DisposableEffect）。
-        // et.109: global crash handler — dump stack to clipboard, toast feedback, no silent crash.
+
+        // 崩溃时把堆栈写到应用私有目录，方便回传排查；不弹任何社区/上传流程。
         val prev = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { t, e ->
             runCatching {
-                val sw = java.io.StringWriter(); e.printStackTrace(java.io.PrintWriter(sw))
-                val clip = (getSystemService(CLIPBOARD_SERVICE) as android.content.ClipboardManager)
-                clip.setPrimaryClip(android.content.ClipData.newPlainText("crash", sw.toString()))
-                val main = android.os.Handler(android.os.Looper.getMainLooper())
-                main.post {
-                    runCatching {
-                        Toast.makeText(this, "日志已复制，请反馈开发者 2416444244@qq.com", Toast.LENGTH_LONG).show()
-                    }
-                }
-                Thread.sleep(1500)
+                val ts = System.currentTimeMillis()
+                val sw = java.io.StringWriter()
+                e.printStackTrace(java.io.PrintWriter(sw))
+                java.io.File(filesDir, "crash_$ts.log").writeText(
+                    "time=$ts\nthread=${t.name}\ndevice=${Build.MANUFACTURER}/${Build.MODEL}\n" +
+                        "android=${Build.VERSION.RELEASE}\nexception=$e\n$sw",
+                )
             }
             prev?.uncaughtException(t, e)
         }
-        enableEdgeToEdge()
 
-        checkStoragePermission()
+        enableEdgeToEdge()
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) checkLegacyStoragePermission()
         checkNotificationPermission()
 
-        // et.90: report device once per version bump (not every launch).
-        Thread {
-            runCatching {
-                val rp = getSharedPreferences("app_prefs", MODE_PRIVATE)
-                val v = io.github.xororz.localdream.BuildConfig.VERSION_CODE
-                if (rp.getInt("last_reported_version", 0) == v) return@runCatching
-                val store = io.github.xororz.localdream.cloud.SecureTokenStore(this)
-                val provider = io.github.xororz.localdream.cloud.CloudConfig.Provider.GITHUB
-                val tok = store.token(provider) ?: return@runCatching
-                val auth = store.state(provider) ?: return@runCatching
-                // ip-api.com gives province (regionName) in CN.
-                val conn = (java.net.URL("http://ip-api.com/json/?fields=status,query,regionName,country").openConnection() as java.net.HttpURLConnection).apply {
-                    connectTimeout = 6000; readTimeout = 6000
-                }
-                val body = conn.inputStream.bufferedReader().readText()
-                val ip = Regex("\"query\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1) ?: "?"
-                val province = (Regex("\"regionName\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1) ?: "") +
-                    " " + (Regex("\"country\"\\s*:\\s*\"([^\"]*)\"").find(body)?.groupValues?.get(1) ?: "")
-                val androidId = android.provider.Settings.Secure.getString(
-                    contentResolver, android.provider.Settings.Secure.ANDROID_ID
-                ) ?: "anon"
-                rp.edit().putInt("last_reported_version", v).apply()
-                // et.91: local LAN IP (192.168/10.x).
-                val wifiIp = runCatching {
-                    java.net.NetworkInterface.getNetworkInterfaces().toList().flatMap { it.inetAddresses.toList() }
-                        .firstOrNull { !it.isLoopbackAddress && it.hostAddress?.contains(':') == false }?.hostAddress ?: "?"
-                }.getOrDefault("?")
-                val content = """{"type":"App","ip":"$ip","wifiIp":"$wifiIp","region":"$province","model":"${android.os.Build.MODEL}","androidId":"$androidId","version":$v,"ts":${System.currentTimeMillis()}}"""
-                io.github.xororz.localdream.cloud.CloudClient.uploadContent(
-                    provider, tok, auth.owner ?: auth.login, auth.repo
-                        ?: io.github.xororz.localdream.cloud.CloudConfig.BACKUP_REPO,
-                    "devices/device_" + androidId.take(8) + ".json",
-                    content.toByteArray(),
-                    "device ping",
-                )
-            }
-        }.start()
-
-        // et.212: announcements/ via RAW (no token) — api.github.com is rate-limited
-        // (403) for anonymous mobile IPs and required a GitHub login, which made the
-        // list empty for everyone not logged in. index.json lists file names; each
-        // announce is fetched as plain JSON. Logs print URL/code/count for debugging.
-        //
-        // et.185: this used to run every file one after another with 8 s timeouts,
-        // so one slow request kept the popup back for ten seconds or more ("公告
-        // 加载很慢"). Now: show the last successful announcement from local cache
-        // at once, then refresh in parallel with a 3 s timeout per request.
-        val announceSp = getSharedPreferences("app_prefs", MODE_PRIVATE)
-        val cachedTs = announceSp.getLong("announce_cache_ts", 0L)
-        if (cachedTs > announceSp.getLong("last_announce_ts", 0L)) {
-            val ct = announceSp.getString("announce_cache_title", "公告").orEmpty()
-            val cx = announceSp.getString("announce_cache_text", "").orEmpty()
-            if (cx.isNotBlank()) announceDialog.value = Triple(ct, cx, cachedTs)
-        }
-        Thread {
-            runCatching {
-                val repo = "ETQWFD/NightmareRoad-ET-ratings"
-                val rawBase = "https://raw.githubusercontent.com/$repo/main/announcements"
-                val tok = io.github.xororz.localdream.BuildConfig.GALLERY_TOKEN
-                // et.144: Contents API + token FIRST (realtime, no raw-cache 404), raw fallback.
-                fun get(path: String): Pair<Int, String> {
-                    if (tok.isNotEmpty()) runCatching {
-                        val a = (java.net.URL(
-                            "https://api.github.com/repos/$repo/contents/announcements/$path"
-                        ).openConnection() as java.net.HttpURLConnection).apply {
-                            connectTimeout = 3500; readTimeout = 3500
-                            setRequestProperty("Authorization", "token $tok")
-                            setRequestProperty("Accept", "application/vnd.github+json")
-                        }
-                        if (a.responseCode == 200) {
-                            val j = org.json.JSONObject(a.inputStream.bufferedReader().readText())
-                            val body = String(android.util.Base64.decode(
-                                j.getString("content"), android.util.Base64.DEFAULT))
-                            a.disconnect(); return 200 to body
-                        }
-                        a.disconnect()
-                    }
-                    val c = (java.net.URL("$rawBase/$path").openConnection() as java.net.HttpURLConnection).apply {
-                        connectTimeout = 3500; readTimeout = 3500
-                    }
-                    val code = c.responseCode
-                    val t = (if (code == 200) c.inputStream else c.errorStream)
-                        ?.bufferedReader()?.readText().orEmpty()
-                    c.disconnect()
-                    return code to t
-                }
-                val (ic, idxText) = get("index.json")
-                android.util.Log.i("Announce", "index $rawBase/index.json HTTP=$ic")
-                if (ic != 200) return@runCatching
-                val files = org.json.JSONObject(idxText).optJSONArray("files") ?: return@runCatching
-                android.util.Log.i("Announce", "index lists ${files.length()} files")
-                // Fetch every candidate in parallel: one stalled file no longer
-                // delays the popup by its full timeout.
-                val names = (0 until files.length()).map { files.optString(it, "") }
-                    .filter { it.startsWith("announce_") && it.endsWith(".json") }
-                val pool = java.util.concurrent.Executors.newFixedThreadPool(6)
-                val best = names.map { name ->
-                    pool.submit<Pair<Long, String>?> {
-                        runCatching {
-                            val (fc, raw) = get(name)
-                            if (fc != 200) return@runCatching null
-                            val o = org.json.JSONObject(raw)
-                            val target = o.optString("target", "全部")
-                            if (!target.contains("手机") && !target.contains("全部")) return@runCatching null
-                            io.github.xororz.localdream.ui.screens.parseAnnounceTs(o) to raw
-                        }.getOrNull()
-                    }
-                }.mapNotNull { runCatching { it.get(6, java.util.concurrent.TimeUnit.SECONDS) }.getOrNull() }
-                    .maxByOrNull { it.first }
-                pool.shutdownNow()
-                val b = best ?: run {
-                    android.util.Log.w("Announce", "no matching announcement")
-                    return@runCatching
-                }
-                val sp = getSharedPreferences("app_prefs", MODE_PRIVATE)
-                val lastTs = sp.getLong("last_announce_ts", 0L)
-                val o = org.json.JSONObject(b.second)
-                val ts = io.github.xororz.localdream.ui.screens.parseAnnounceTs(o)
-                if (ts <= lastTs) {
-                    android.util.Log.i("Announce", "latest ts=$ts <= lastRead=$lastTs, skip popup")
-                    return@runCatching
-                }
-                val title = o.optString("title", "公告")
-                val text = io.github.xororz.localdream.ui.screens.parseAnnounceContent(o)
-                android.util.Log.i("Announce", "showing new announcement ts=$ts title=$title len=${text.length}")
-                io.github.xororz.localdream.ui.screens.setAnnounceUnread(applicationContext, true)
-                // Cache the body so the next launch shows it instantly, even
-                // before the network round-trip finishes (et.185).
-                sp.edit()
-                    .putLong("announce_cache_ts", ts)
-                    .putString("announce_cache_title", title)
-                    .putString("announce_cache_text", text)
-                    .apply()
-                runOnUiThread { announceDialog.value = Triple(title, text, ts) }
-            }.onFailure { android.util.Log.w("Announce", "pull failed: ${it.message}") }
-        }.start()
-
-        // et.118/build196: best-effort quota merge from the quota repo on startup.
-        io.github.xororz.localdream.service.QuotaManager.mergeFromRemote(this)
-
-        val app = application as LocalDreamApplication
-
         setContent {
-            val themeController = rememberThemeController()
-            CompositionLocalProvider(LocalThemeController provides themeController) {
-                LocalDreamTheme(themeController.state) {
-                    Surface(
-                        modifier = Modifier.fillMaxSize(),
-                        color = MaterialTheme.colorScheme.surface,
-                    ) {
-                        val migrationState by app.migrationState.collectAsState()
-
-                        when (migrationState) {
-                            is MigrationState.Done,
-                            is MigrationState.NotNeeded,
-                            -> AppContent()
-
-                            is MigrationState.Idle,
-                            is MigrationState.InProgress,
-                            is MigrationState.Failed,
-                            -> MigrationScreen(
-                                state = migrationState,
-                                onRetry = { app.retryMigration() },
-                                onSkip = { app.skipMigration() },
-                            )
-                        }
-
-                        // et.92: coarse-location gate on first launch.
-                        var locGranted by remember {
-                            mutableStateOf(
-                                androidx.core.content.ContextCompat.checkSelfPermission(
-                                    this@MainActivity,
-                                    android.Manifest.permission.ACCESS_COARSE_LOCATION,
-                                ) == android.content.pm.PackageManager.PERMISSION_GRANTED
-                            )
-                        }
-                        var showLocGate by remember { mutableStateOf(!locGranted) }
-                        val locLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-                            androidx.activity.result.contract.ActivityResultContracts.RequestPermission(),
-                        ) { ok ->
-                            locGranted = ok == true
-                            if (locGranted) showLocGate = false
-                        }
-                        if (showLocGate && !locGranted) {
-                            androidx.compose.material3.AlertDialog(
-                                onDismissRequest = { },
-                                title = { Text("需要位置权限") },
-                                text = { Text("定位仅用于统计用户分布和防盗用，不收集精确位置，不存储通讯录/照片。") },
-                                confirmButton = {
-                                    androidx.compose.material3.TextButton(onClick = {
-                                        runCatching {
-                                            startActivity(
-                                                android.content.Intent(
-                                                    android.provider.Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-                                                    android.net.Uri.parse("package:$packageName"),
-                                                ).addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                                            )
-                                        }
-                                    }) { Text("重新授权") }
-                                },
-                                dismissButton = {
-                                    androidx.compose.material3.TextButton(onClick = { showLocGate = false }) {
-                                        Text("先看看")
-                                    }
-                                },
-                            )
-                        }
-                        LaunchedEffect(Unit) { if (!locGranted) locLauncher.launch(android.Manifest.permission.ACCESS_COARSE_LOCATION) }
-
-                        // et.243（隐私修复）：启动时不再申请“读取相册”权限。
-                        // 选图全部走系统照片选择器（Photo Picker / GetContent），
-                        // 用户亲手挑哪张应用才拿得到哪张，应用不会扫描相册，
-                        // 也不存在后台自动上传相册图片的代码路径。
-                        // 麦克风仍按需申请（仅语音消息用到）。
-                        val permLauncher = androidx.activity.compose.rememberLauncherForActivityResult(
-                            androidx.activity.result.contract.ActivityResultContracts.RequestPermission()) { }
-                        LaunchedEffect(Unit) {
-                            if (checkSelfPermission(android.Manifest.permission.RECORD_AUDIO)
-                                != android.content.pm.PackageManager.PERMISSION_GRANTED
-                            ) {
-                                permLauncher.launch(android.Manifest.permission.RECORD_AUDIO)
-                            }
-                        }
-
-                        val prefs = remember { getSharedPreferences("app_prefs", MODE_PRIVATE) }
-                        // et.118/build195: rating popup removed per request. Keep the
-                        // launch counter (harmless) but never show the star dialog;
-                        // users who already rated stay untouched.
-                        remember {
-                            val n = prefs.getInt("launch_count", 0) + 1
-                            prefs.edit().putInt("launch_count", n).apply()
-                        }
-                        var ratingDialog by remember { mutableStateOf(false) }
-                        if (ratingDialog) {
-                            var stars by remember { mutableStateOf(5) }
-                            var comment by remember { mutableStateOf("") }
-                            androidx.compose.material3.AlertDialog(
-                                onDismissRequest = { ratingDialog = false },
-                                title = { Text("给个评分") },
-                                text = {
-                                    androidx.compose.foundation.layout.Column {
-                                        Text("你喜欢用吗？点星评分")
-                                        androidx.compose.foundation.layout.Row {
-                                            for (i in 1..5) {
-                                                Text(
-                                                    text = if (i <= stars) "★" else "☆",
-                                                    fontSize = androidx.compose.ui.unit.TextUnit(28f, androidx.compose.ui.unit.TextUnitType.Sp),
-                                                    modifier = Modifier.clickable { stars = i },
-                                                )
-                                            }
-                                        }
-                                        androidx.compose.material3.OutlinedTextField(
-                                            value = comment, onValueChange = { comment = it },
-                                            label = { Text("评论（选填）") },
-                                            modifier = Modifier.fillMaxWidth(),
-                                        )
-                                    }
-                                },
-                                confirmButton = {
-                                    androidx.compose.material3.TextButton(onClick = {
-                                        ratingDialog = false
-                                        prefs.edit().putBoolean("rated_v2", true).apply()
-                                        val s = stars
-                                        val c = comment
-                                        Thread {
-                                            val ok = runCatching {
-                                                val store = io.github.xororz.localdream.cloud.SecureTokenStore(this@MainActivity)
-                                                val provider = io.github.xororz.localdream.cloud.CloudConfig.Provider.GITHUB
-                                                val tok = store.token(provider) ?: return@runCatching false
-                                                val auth = store.state(provider) ?: return@runCatching false
-                                                val aid = android.provider.Settings.Secure.getString(
-                                                    contentResolver, android.provider.Settings.Secure.ANDROID_ID
-                                                ) ?: "anon"
-                                                val safeComment = c.replace("\\", "\\\\").replace("\"", "'")
-                                                    .replace("\n", "\\n").replace("\r", "")
-                                                val content = """{"stars":$s,"comment":""" + "\"" + safeComment + "\"" + ""","ts":${System.currentTimeMillis()},"model":"${android.os.Build.MODEL}"}"""
-                                                io.github.xororz.localdream.cloud.CloudClient.uploadContent(
-                                                    provider, tok, auth.owner ?: auth.login,
-                                                    auth.repo ?: io.github.xororz.localdream.cloud.CloudConfig.BACKUP_REPO,
-                                                    "ratings/rating_$aid.json", content.toByteArray(), "rating",
-                                                )
-                                                true
-                                            }.getOrDefault(false)
-                                            runOnUiThread {
-                                                Toast.makeText(
-                                                    this@MainActivity,
-                                                    if (ok) "评分已提交，谢谢！" else "提交失败，请检查网络/登录",
-                                                    Toast.LENGTH_LONG,
-                                                ).show()
-                                            }
-                                        }.start()
-                                    }) { Text("提交") }
-                                },
-                                dismissButton = {
-                                    androidx.compose.material3.TextButton(onClick = {
-                                        ratingDialog = false
-                                        prefs.edit().putBoolean("rated_v2", true).apply()
-                                    }) { Text("下次再说") }
-                                },
-                            )
-                        }
-                        // et.118/build195: feedback entry must be a small 48dp floating
-                        // ball pinned bottom-end. Emitting it as a bare sibling of
-                        // AppContent in the Surface box let it balloon and swallow all
-                        // touches; align it explicitly to BottomEnd and pad it.
-                        var feedbackDialog by remember { mutableStateOf(false) }
-                        // et.214: floating feedback FAB removed from home; entry is now
-                        // the last item on the settings page. The dialog below stays.
-                        if (feedbackDialog) {
-                            var fb by remember { mutableStateOf("") }
-                            // et.117/build194: explicit Column body with fillMaxWidth.
-                            // The bare OutlinedTextField-as-text version measured to
-                            // zero height on some devices, leaving only the title.
-                            androidx.compose.material3.AlertDialog(
-                                onDismissRequest = { feedbackDialog = false },
-                                confirmButton = {
-                                    androidx.compose.material3.TextButton(
-                                        onClick = {
-                                            val text = fb.trim()
-                                            if (text.isEmpty()) return@TextButton
-                                            feedbackDialog = false
-                                            Thread {
-                                                val (ok, reason) = runCatching {
-                                                    val store = io.github.xororz.localdream.cloud.SecureTokenStore(this@MainActivity)
-                                                    val provider = io.github.xororz.localdream.cloud.CloudConfig.Provider.GITHUB
-                                                    val tok = store.token(provider) ?: return@runCatching (false to "未登录Token")
-                                                    val auth = store.state(provider) ?: return@runCatching (false to "未登录")
-                                                    val aid = android.provider.Settings.Secure.getString(
-                                                        contentResolver, android.provider.Settings.Secure.ANDROID_ID
-                                                    ) ?: "anon"
-                                                    val tsMs = System.currentTimeMillis()
-                                                    val ts = tsMs / 1000L // et.130: body ts = Unix seconds
-                                                    val safeText = text.replace("\\", "\\\\").replace("\"", "'")
-                                                        .replace("\n", "\\n").replace("\r", "")
-                                                    val body = """{"text":"$safeText","model":"${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}","androidVer":"${android.os.Build.VERSION.RELEASE}","ts":$ts}"""
-                                                    io.github.xororz.localdream.cloud.CloudClient.uploadContent(
-                                                        provider, tok,
-                                                        // et.130追加11铁证: 反馈必须写到后台读取的
-                                                        // ratings 仓 feedback/, 而非云备份仓.
-                                                        "ETQWFD", "NightmareRoad-ET-ratings",
-                                                        "feedback/feedback_${aid.take(8)}_$tsMs.json", body.toByteArray(), "feedback",
-                                                    )
-                                                    (true to "")
-                                                }.getOrElse { false to (it.message ?: "网络错误") }
-                                                runOnUiThread {
-                                                    Toast.makeText(this@MainActivity,
-                                                        if (ok) "反馈已提交，谢谢" else "提交失败：$reason",
-                                                        Toast.LENGTH_LONG).show()
-                                                }
-                                            }.start()
-                                        },
-                                    ) { Text("提交") }
-                                },
-                                dismissButton = {
-                                    androidx.compose.material3.TextButton(onClick = { feedbackDialog = false }) { Text("取消") }
-                                },
-                                title = { Text("反馈问题") },
-                                text = {
-                                    // et.118/build195b: harden against the content slot
-                                    // collapsing to zero height on some devices — make the
-                                    // column scrollable and pin the input to a minimum height
-                                    // so the model line, the field and the buttons always show.
-                                    Column(
-                                        modifier = Modifier
-                                            .fillMaxWidth()
-                                            .verticalScroll(rememberScrollState()),
-                                    ) {
-                                        Text(
-                                            text = "机型：${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}（Android ${android.os.Build.VERSION.RELEASE}）",
-                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        // et.130: device-local time (UTC ms -> local).
-                                        Text(
-                                            text = "时间：" + java.text.SimpleDateFormat(
-                                                "yyyy-MM-dd HH:mm", java.util.Locale.getDefault(),
-                                            ).format(java.util.Date()),
-                                            style = androidx.compose.material3.MaterialTheme.typography.bodySmall,
-                                            color = androidx.compose.material3.MaterialTheme.colorScheme.onSurfaceVariant,
-                                        )
-                                        Spacer(modifier = Modifier.height(8.dp))
-                                        Text(
-                                            text = "问题描述",
-                                            style = androidx.compose.material3.MaterialTheme.typography.labelMedium,
-                                        )
-                                        OutlinedTextField(
-                                            value = fb,
-                                            onValueChange = { fb = it },
-                                            modifier = Modifier
-                                                .fillMaxWidth()
-                                                .heightIn(min = 120.dp),
-                                            placeholder = { Text("请描述遇到的问题…") },
-                                            minLines = 4,
-                                        )
-                                    }
-                                },
-                            )
-                        }
-                        // et.114: announcement dialog
-                        announceDialog.value?.let { (t, tx, ats) ->
-                            androidx.compose.material3.AlertDialog(
-                                onDismissRequest = {
-                                    // et.210: mark read (ts + clear bell dot) on close.
-                                    getSharedPreferences("app_prefs", MODE_PRIVATE)
-                                        .edit().putLong("last_announce_ts", ats).apply()
-                                    io.github.xororz.localdream.ui.screens.setAnnounceUnread(applicationContext, false)
-                                    announceDialog.value = null
-                                },
-                                confirmButton = {
-                                    androidx.compose.material3.TextButton(onClick = {
-                                        getSharedPreferences("app_prefs", MODE_PRIVATE)
-                                            .edit().putLong("last_announce_ts", ats).apply()
-                                        io.github.xororz.localdream.ui.screens.setAnnounceUnread(applicationContext, false)
-                                        announceDialog.value = null
-                                    }) { Text("知道了") }
-                                },
-                                title = { Text(t) },
-                                text = { Text(tx) },
-                            )
-                        }
-                    }
+            NertTheme {
+                Surface(
+                    modifier = Modifier.fillMaxSize(),
+                    color = MaterialTheme.colorScheme.background,
+                ) {
+                    EditRoadShell()
                 }
             }
         }
     }
 }
 
-@Composable
-private fun AppContent() {
-    val navController = rememberNavController()
-    NavHost(
-        navController = navController,
-        startDestination = Screen.ModelList.route,
-        enterTransition = { sharedAxisXEnter() },
-        exitTransition = { sharedAxisXExit() },
-        popEnterTransition = { sharedAxisXPopEnter() },
-        popExitTransition = { sharedAxisXPopExit() },
-        predictivePopEnterTransition = { _ -> sharedAxisXPredictivePopEnter() },
-        predictivePopExitTransition = { _ -> sharedAxisXPredictivePopExit() },
-    ) {
-        composable(Screen.ModelList.route) {
-            ModelListScreen(navController)
-        }
-        composable(
-            route = Screen.ModelRun.route,
-            arguments = listOf(
-                navArgument("modelId") {
-                    type = NavType.StringType
-                },
-                navArgument("remote") {
-                    type = NavType.BoolType
-                    defaultValue = false
-                },
-            ),
-        ) { backStackEntry ->
-            val modelId = backStackEntry.arguments?.getString("modelId") ?: ""
-            val isRemote = backStackEntry.arguments?.getBoolean("remote") ?: false
-
-            ModelRunScreen(
-                modelId = modelId,
-                isRemote = isRemote,
-                navController = navController,
-            )
-        }
-        composable(Screen.Upscale.route) {
-            UpscaleScreen(navController)
-        }
-        composable(Screen.History.route) {
-            HistoryScreen(navController)
-        }
-        composable(Screen.RemoteLink.route) {
-            RemoteScreen(navController)
-        }
-        composable(Screen.Gallery.route) {
-            io.github.xororz.localdream.ui.screens.GalleryScreen(navController)
-        }
-        composable("chat") {
-            io.github.xororz.localdream.ui.screens.ChatScreen(onBack = { navController.popBackStack() })
-        }
-        composable(
-            route = Screen.Edit.route,
-            arguments = listOf(
-                androidx.navigation.navArgument("modelId") { type = androidx.navigation.NavType.StringType },
-                androidx.navigation.navArgument("modelName") {
-                    type = androidx.navigation.NavType.StringType
-                    defaultValue = "Model"
-                },
-                androidx.navigation.navArgument("backendType") {
-                    type = androidx.navigation.NavType.StringType
-                    defaultValue = "sd15cpu"
-                },
-                androidx.navigation.navArgument("imagePath") {
-                    type = androidx.navigation.NavType.StringType
-                    defaultValue = ""
-                },
-            ),
-        ) { entry ->
-            io.github.xororz.localdream.ui.screens.EditScreen(
-                navController = navController,
-                modelId = entry.arguments?.getString("modelId").orEmpty(),
-                modelName = entry.arguments?.getString("modelName") ?: "Model",
-                backendType = entry.arguments?.getString("backendType") ?: "sd15cpu",
-                initialImagePath = entry.arguments?.getString("imagePath").orEmpty(),
-            )
-        }
-    }
-}
-
-/**
- * 2026-11：GitHub 网页授权回跳处理（localdreamet://oauth?code=...）。
- * 换 token 走后台线程，成功后写入本机 SecureTokenStore，失败只提示不崩溃。
- */
-private fun handleGithubOAuth(activity: android.app.Activity, intent: Intent?) {
-    val data = intent?.data ?: return
-    val isCustom = data.scheme == "localdreamet" && data.host == "oauth"
-    val isAppLink = data.scheme == "https" && data.lastPathSegment == "oauth.html"
-    if (!isCustom && !isAppLink) return
-    val code = data.getQueryParameter("code") ?: data.getQueryParameter("CODE") ?: return
-    // et.243：GitHub OAuth App 只能登记一个回调地址。之前只试 etc.tw.kg，
-    // 一旦 App 里登记的是 Pages 地址（或反过来），换 token 必然 404/失败，
-    // 用户看到的就是“授权完没跳回来”。这里按候选地址依次换，成功即止。
-    val candidateRedirects = listOf(
-        "https://etc.tw.kg/oauth.html",
-        "https://etqwfd.github.io/NightmareRoad-ET/oauth.html",
-        "https://etqwfd.github.io/LocalDream-ET/oauth.html",
-        "https://etqwfd.github.io/LocalDreamET/oauth.html",
-    )
-    Thread {
-        val result = runCatching {
-            val tk = io.github.xororz.localdream.cloud.GithubDeviceAuth.exchangeCodeAnyRedirect(
-                "Ov23ligVcx2ZUAG3lNAA",
-                "7d38de04bbd05140406f8351fd6c7b8ae08f380e",
-                code,
-                candidateRedirects,
-            )
-            val provider = io.github.xororz.localdream.cloud.CloudConfig.Provider.GITHUB
-            val user = io.github.xororz.localdream.cloud.CloudClient.validatePAT(provider, tk)
-            val store = io.github.xororz.localdream.cloud.SecureTokenStore(activity)
-            runCatching {
-                io.github.xororz.localdream.cloud.CloudClient.ensurePrivateRepo(provider, tk, user.login)
-            }
-            store.saveToken(
-                provider, tk, user.login, user.displayName,
-                avatarUrl = user.avatarUrl,
-                owner = user.login,
-                repo = io.github.xororz.localdream.cloud.CloudConfig.BACKUP_REPO,
-                repoState = io.github.xororz.localdream.cloud.SecureTokenStore.RepoState.READY,
-            )
-            user.displayName ?: user.login
-        }
-        activity.runOnUiThread {
-            result.onSuccess {
-                android.widget.Toast.makeText(activity, "GitHub 授权成功：$it", android.widget.Toast.LENGTH_LONG).show()
-            }.onFailure {
-                android.widget.Toast.makeText(activity, "GitHub 授权失败：${it.message}", android.widget.Toast.LENGTH_LONG).show()
-            }
-        }
-    }.start()
-}

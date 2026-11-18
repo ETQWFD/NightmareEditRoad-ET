@@ -1,15 +1,16 @@
 {
-  "name": "LocalDream ET",
-  "short_name": "LocalDream ET",
-  "description": "在手机与电脑本地运行 Stable Diffusion 的离线推理 App",
+  "name": "NERT · Nightmare Edit Road",
+  "short_name": "NERT",
+  "description": "手机本地 AI 修图：多图批量修图、模型下载与导入，图片不出机。",
   "lang": "zh-CN",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#0f1115",
-  "theme_color": "#0f1115",
+  "background_color": "#f6f7f9",
+  "theme_color": "#ffffff",
   "icons": [
-    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
-    { "src": "assets/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+    { "src": "assets/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "assets/icon-maskable-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable" }
   ]
 }

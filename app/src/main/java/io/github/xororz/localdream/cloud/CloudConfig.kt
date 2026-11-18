@@ -20,22 +20,23 @@ object CloudConfig {
      * / unreachable Gitee channel must silently fall back to GitHub.
      */
     const val GITEE_OWNER = "ETQWFD"
-    const val GITEE_REPO = "NightmareRoad-ET"
+    const val GITEE_REPO = "NightmareEditRoad-ET"
 
+    // 噩梦修改之路-ET 独立更新源：只指向我们新建的仓库。
     val githubUpdateJson: String
-        get() = "https://etc.tw.kg/update.json"
+        get() = "https://cdn.jsdelivr.net/gh/$GITEE_OWNER/$GITEE_REPO@main/update.json"
     val githubUpdateJsonRaw: String
-        get() = "https://raw.githubusercontent.com/ETQWFD/NightmareRoad-ET/main/docs/update.json"
+        get() = "https://raw.githubusercontent.com/$GITEE_OWNER/$GITEE_REPO/main/update.json"
 
     /**
      * et.244：境内 raw.githubusercontent 经常连不上、Pages 也可能被 DNS 污染，
      * 再补两条公共 CDN 通道，检查更新不再因为单条通道挂掉而“没反应”。
      */
     val jsdelivrUpdateJson: String
-        get() = "https://cdn.jsdelivr.net/gh/$GITEE_OWNER/$GITEE_REPO@main/docs/update.json"
+        get() = "https://cdn.jsdelivr.net/gh/$GITEE_OWNER/$GITEE_REPO@main/update.json"
     val ghProxyUpdateJson: String
-        get() = "https://gh-proxy.com/https://raw.githubusercontent.com/$GITEE_OWNER/$GITEE_REPO/main/docs/update.json"
-    /** Gitee Pages/raw update.json; replace owner/repo once the mirror exists. */
+        get() = "https://gh-proxy.com/https://raw.githubusercontent.com/$GITEE_OWNER/$GITEE_REPO/main/update.json"
+    /** Gitee Pages/raw update.json; 新仓库未建镜像时自然 404，不影响 GitHub 通道。 */
     val giteeUpdateJson: String
-        get() = "https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/docs/update.json"
+        get() = "https://gitee.com/$GITEE_OWNER/$GITEE_REPO/raw/main/update.json"
 }

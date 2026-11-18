@@ -66,19 +66,23 @@ class ModelDownloadService : Service() {
      * reachable one on the current network.
      */
     private fun mirrorCandidates(url: String): List<String> {
-        // et.99: prefer hf-mirror.com first (huggingface.co blocked/timeout in CN).
-        if (url.contains("//huggingface.co")) {
-            val mirror = url
-                .replace("https://huggingface.co", "https://hf-mirror.com")
-                .replace("http://huggingface.co", "https://hf-mirror.com")
-            return listOf(mirror, url)
+        val source = getSharedPreferences("app_prefs", MODE_PRIVATE)
+            .getString("download_source", "auto") ?: "auto"
+        val isHf = url.contains("//huggingface.co")
+        val isMirror = url.contains("//hf-mirror.com")
+        val official = url
+            .replace("https://hf-mirror.com", "https://huggingface.co")
+            .replace("http://hf-mirror.com", "https://huggingface.co")
+        val mirror = url
+            .replace("https://huggingface.co", "https://hf-mirror.com")
+            .replace("http://huggingface.co", "https://hf-mirror.com")
+        return when {
+            !isHf && !isMirror -> listOf(url)
+            source == "mirror" -> listOf(mirror)
+            source == "official" -> listOf(official)
+            // auto：国内网络优先 hf-mirror，失败再回官方。
+            else -> listOf(mirror, official)
         }
-        val out = linkedSetOf(url)
-        when {
-            url.contains("//hf-mirror.com") ->
-                out += url.replace("https://hf-mirror.com", "https://huggingface.co")
-        }
-        return out.toList()
     }
 
     // et.117: HEAD each mirror and (a) sort by latency, (b) capture the real

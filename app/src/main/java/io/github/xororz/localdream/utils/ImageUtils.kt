@@ -332,7 +332,7 @@ suspend fun saveImage(context: Context, bitmap: Bitmap, onSuccess: () -> Unit, o
                     put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                     put(
                         MediaStore.Images.Media.RELATIVE_PATH,
-                        Environment.DIRECTORY_PICTURES + "/NightmareRoad-ET",
+                        Environment.DIRECTORY_PICTURES + "/噩梦修改之路-ET",
                     )
                 }
 
@@ -427,7 +427,7 @@ suspend fun saveImageFromFile(context: Context, sourceFile: File, onSuccess: () 
                     put(MediaStore.Images.Media.MIME_TYPE, mimeType)
                     put(
                         MediaStore.Images.Media.RELATIVE_PATH,
-                        Environment.DIRECTORY_PICTURES + "/NightmareRoad-ET",
+                        Environment.DIRECTORY_PICTURES + "/噩梦修改之路-ET",
                     )
                 }
                 val resolver = context.contentResolver

@@ -20,6 +20,5 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LocalDream"
+rootProject.name = "NightmareEditRoad-ET"
 include(":app")
-include(":chatclient")

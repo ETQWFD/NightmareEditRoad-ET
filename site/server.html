@@ -1,0 +1,128 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NERT 服务端 — 把本地 Stable Diffusion 引擎变成一个 HTTP 出图服务，供电脑与局域网调用。">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="assets/icon.png">
+<title>服务端 · NERT</title>
+<style>
+  :root{
+    --bg:#f6f7f9; --ink:#0f1216; --mut:#5d6570; --line:rgba(15,18,22,.10);
+    --glass:rgba(255,255,255,.72); --glass-strong:rgba(255,255,255,.88);
+    --shadow:0 10px 34px rgba(24,32,44,.10); --accent:#2f6df6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.65 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(46% 40% at 14% 6%, rgba(120,170,255,.28), transparent 60%),
+      radial-gradient(40% 40% at 86% 8%, rgba(190,205,255,.24), transparent 62%),
+      linear-gradient(180deg,#fdfdfe,#eef1f5 65%,#e9edf2)}
+  body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.45;
+    background-image:radial-gradient(rgba(15,18,22,.16) 1px,transparent 1px);background-size:22px 22px}
+  a{color:inherit;text-decoration:none}
+  .wrap{max-width:940px;margin:0 auto;padding:0 20px}
+  header{position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(1.4);
+    background:rgba(255,255,255,.62);border-bottom:1px solid var(--line)}
+  nav{display:flex;align-items:center;gap:8px;height:62px}
+  .logo{font-weight:800;letter-spacing:.14em;font-size:20px}
+  .logo span{color:var(--accent)}
+  nav .links{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);font-size:14px;color:var(--mut)}
+  .chip.on,.chip:hover{color:var(--ink);background:var(--glass-strong);border-color:rgba(47,109,246,.35)}
+  h1{font-size:clamp(28px,5vw,42px);margin:44px 0 10px;letter-spacing:-.4px}
+  .lead{color:var(--mut);margin:0 0 24px;font-size:17px}
+  .card{background:var(--glass);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.75);
+    box-shadow:var(--shadow);border-radius:18px;padding:18px 20px;margin:0 0 16px}
+  .card h2{margin:0 0 8px;font-size:19px}
+  .card h3{margin:14px 0 6px;font-size:15.5px}
+  .card p{margin:0 0 8px;color:var(--mut);font-size:14.5px}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;background:rgba(15,18,22,.06);padding:2px 6px;border-radius:6px}
+  pre{background:#0f1216;color:#e8ecf2;padding:14px;border-radius:12px;overflow:auto;font-size:13px;line-height:1.6}
+  pre code{background:none;color:inherit;padding:0}
+  table{width:100%;border-collapse:collapse;font-size:14px;background:var(--glass-strong);border-radius:14px;overflow:hidden}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left;vertical-align:top}
+  th{font-size:12.5px;color:var(--mut);text-transform:uppercase;letter-spacing:.06em}
+  tr:last-child td{border-bottom:0}
+  .warn{border-left:3px solid var(--accent);background:rgba(47,109,246,.07);padding:10px 14px;border-radius:0 10px 10px 0;color:#243a63;font-size:14px}
+  footer{margin:36px 0 40px;padding-top:22px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="wrap"><nav>
+    <div class="logo">N<span>E</span>RT</div>
+    <div class="links">
+      <a class="chip" href="index.html">首页</a>
+      <a class="chip on" href="server.html">服务端</a>
+      <a class="chip" href="help.html">帮助</a>
+      <a class="chip" href="https://github.com/ETQWFD/NightmareEditRoad-ET">仓库</a>
+    </div>
+  </nav></div>
+</header>
+
+<div class="wrap">
+  <h1>服务端（可选）</h1>
+  <p class="lead">手机 App 完全不需要服务端就能修图。服务端是给「想在同一台电脑或局域网里用 HTTP 出图」的人准备的可选组件：
+    它把本地引擎包成一个兼容 <code>sdapi</code> / OpenAI images 接口的小服务，本机跑，不出公网也可用。</p>
+
+  <div class="card">
+    <h2>它是什么 / 不再是什么</h2>
+    <p>是一个单二进制本地服务：<code>Go</code> 主程序 + 随包引擎，监听 <code>127.0.0.1:7860</code>（端口可改），把请求转给本机模型出图。</p>
+    <p>这一版已经去掉与修图无关的东西：没有社区、没有聊天、没有额度/签到/兑换、没有登录鉴权后台，也去掉了根路径自动跳转的网页出图控制台。
+      只保留健康检查与出图接口，接口越少越稳。</p>
+    <div class="warn">服务端不是必需的。手机 App 的模型下载走 GitHub 官方源与镜像源，与这个服务端无关；两者不要混用。</div>
+  </div>
+
+  <div class="card">
+    <h2>接口</h2>
+    <table>
+      <thead><tr><th>方法 / 路径</th><th>作用</th><th>说明</th></tr></thead>
+      <tbody>
+        <tr><td><code>GET /healthz</code></td><td>健康检查</td><td>返回引擎与模型状态，用于脚本与监控；该路径不打请求日志。</td></tr>
+        <tr><td><code>POST /sdapi/v1/txt2img</code></td><td>文生图</td><td>A1111 兼容字段：<code>prompt</code>、<code>negative_prompt</code>、<code>steps</code>、<code>cfg_scale</code>、<code>width</code>、<code>height</code>、<code>seed</code>、<code>sampler_name</code>。</td></tr>
+        <tr><td><code>POST /sdapi/v1/img2img</code></td><td>图生图 / 修图</td><td>在 txt2img 字段基础上加 <code>init_images</code>（base64）与 <code>denoising_strength</code>。手机端修图用的就是这条链路。</td></tr>
+        <tr><td><code>POST /v1/images/generations</code></td><td>OpenAI 兼容</td><td>方便直接接入现成工具链，返回 <code>b64_json</code>。</td></tr>
+      </tbody>
+    </table>
+    <h3>已移除</h3>
+    <p><code>/admin</code> 网页出图控制台、<code>/admin/generate</code>、<code>/admin/cancel</code>、<code>/admin/key/rotate</code> 这类后台接口不再暴露；
+      <code>/api/txt2img</code>、<code>/api/img2img</code> 别名与根路径跳转也一并去掉，避免误以为有个"管理后台"。</p>
+  </div>
+
+  <div class="card">
+    <h2>构建与运行</h2>
+    <p>Go 1.23+，在仓库 <code>server-go/</code> 目录：</p>
+<pre><code># Linux
+GOOS=linux GOARCH=amd64 go build -o nert-server-linux-amd64 .
+
+# Windows
+GOOS=windows GOARCH=amd64 go build -o nert-server-windows-amd64.exe .
+
+# 运行（模型放 models/，引擎放 bin/）
+./nert-server-linux-amd64</code></pre>
+    <h3>目录约定</h3>
+<pre><code>nert-server/
+├── config.json     # port / model_path / engine_path 等
+├── models/         # .safetensors / .ckpt / .gguf，支持子目录
+└── bin/            # 引擎可执行文件</code></pre>
+    <p>启动日志会打印实际使用的模型；没找到模型时会提示把权重丢进 <code>models/</code>。出图耗时可能几分钟，因此写超时必须为 0（不超时），
+      反向代理（Nginx / Cloudflare Tunnel）也要把读超时放宽。</p>
+  </div>
+
+  <div class="card">
+    <h2>安全提示</h2>
+    <p>默认监听 <code>0.0.0.0</code> 的历史配置已在配置里显式控制。只在可信网络里开放端口；需要远程时用 SSH 隧道
+      <code>ssh -L 7860:127.0.0.1:7860 user@host</code>，不要把端口直接暴露到公网，也不要在服务端存放任何用户图片。</p>
+  </div>
+
+  <footer>
+    NERT · <a href="index.html">首页</a> · <a href="help.html">帮助</a> ·
+    <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/latest">下载 App</a>
+  </footer>
+</div>
+</body>
+</html>

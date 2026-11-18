@@ -59,7 +59,7 @@ object AppUpdater {
     // Gitee mirror is only a fallback and a 404/unreachable Gitee must NOT fail
     // the check — any one channel being available is enough.
     private const val RELEASES_API =
-        "https://api.github.com/repos/ETQWFD/NightmareRoad-ET/releases/latest"
+        "https://api.github.com/repos/ETQWFD/NightmareEditRoad-ET/releases/latest"
 
     private val client: OkHttpClient by lazy {
         OkHttpClient.Builder()
@@ -121,7 +121,7 @@ object AppUpdater {
         val request = Request.Builder()
             .url(url)
             .header("Accept", "application/json")
-            .header("User-Agent", "NightmareRoad-ET/${BuildConfig.VERSION_NAME}")
+            .header("User-Agent", "NightmareEditRoad-ET/${BuildConfig.VERSION_NAME}")
             .build()
         return client.newCall(request).execute().use { resp ->
             if (!resp.isSuccessful) error("HTTP ${resp.code}")
@@ -401,7 +401,7 @@ object AppUpdater {
     ): Long {
         val builder = Request.Builder()
             .url(mirror)
-            .header("User-Agent", "NightmareRoad-ET/${BuildConfig.VERSION_NAME}")
+            .header("User-Agent", "NightmareEditRoad-ET/${BuildConfig.VERSION_NAME}")
         if (from > 0) builder.header("Range", "bytes=$from-")
         stallClient.newCall(builder.build()).execute().use { resp ->
             if (resp.code != 200 && resp.code != 206) error("HTTP ${resp.code} on $mirror")

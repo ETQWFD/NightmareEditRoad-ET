@@ -158,24 +158,19 @@ func main() {
 	go watchEngine()
 
 	mux := http.NewServeMux()
+	// 只保留健康检查与出图接口。/admin 出图控制台、/api/* 别名属于“用不到的后台”，
+	// 已经不再注册（对应的处理函数仍留在代码里，只是不再对外暴露）。
 	mux.HandleFunc("/healthz", handleHealth)
-	mux.HandleFunc("/admin", handleAdminPage)
-	mux.HandleFunc("/admin/", handleAdminPage)
-	mux.HandleFunc("/admin/state", handleAdminState)
-	mux.HandleFunc("/admin/generate", handleAdminGenerate)
-	mux.HandleFunc("/admin/cancel", handleAdminCancel)
-	mux.HandleFunc("/admin/key/rotate", handleKeyRotate)
 	mux.HandleFunc("/v1/images/generations", handleOpenAI)
 	mux.HandleFunc("/sdapi/v1/txt2img", handleSDAPI)
 	mux.HandleFunc("/sdapi/v1/img2img", handleSDAPI)
-	mux.HandleFunc("/api/txt2img", handleSDAPI)
-	mux.HandleFunc("/api/img2img", handleSDAPI)
 	mux.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path != "/" {
 			http.NotFound(w, r)
 			return
 		}
-		http.Redirect(w, r, "/admin", http.StatusFound)
+		w.Header().Set("Content-Type", "application/json; charset=utf-8")
+		fmt.Fprintf(w, `{"app":"NERT server","endpoints":["/healthz","/sdapi/v1/txt2img","/sdapi/v1/img2img","/v1/images/generations"]}`)
 	})
 
 	srv := &http.Server{

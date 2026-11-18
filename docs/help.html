@@ -1,237 +1,194 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>使用文档 · Nightmare Road-ET（开发者：ET）</title>
-<link rel="icon" href="icon.png" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="description" content="NERT 帮助 — 安装、模型下载与导入、修图失败排查、预计时间原理、机型建议与加群反馈。">
+<meta name="theme-color" content="#ffffff">
+<link rel="icon" href="assets/icon.png">
+<title>帮助 · NERT</title>
 <style>
-  :root{--bg:#0b1117;--card:#141e29;--line:#22303e;--txt:#e8eef4;--mut:#9fb0c0;--acc:#2dd4bf;--acc2:#38bdf8;--warn:#fbbf24;}
-  *{box-sizing:border-box;margin:0;padding:0}
-  html{scroll-behavior:smooth}
-  body{font-family:-apple-system,BlinkMacSystemFont,"Seg UI",Roboto,"PingFang SC","Microsoft YaHei",sans-serif;
-    background:radial-gradient(1200px 600px at 80% -10%,rgba(45,212,191,.12),transparent 60%),var(--bg);
-    color:var(--txt);line-height:1.8;-webkit-font-smoothing:antialiased;}
-  .wrap{max-width:880px;margin:0 auto;padding:0 20px 90px}
-  header{position:sticky;top:0;z-index:10;background:rgba(11,17,23,.82);backdrop-filter:blur(10px);border-bottom:1px solid var(--line)}
-  .navin{max-width:880px;margin:0 auto;height:60px;display:flex;align-items:center;gap:10px;padding:0 20px}
-  .navin img{width:30px;height:30px;border-radius:8px}
-  .brand{font-weight:700}
-  .navin a.ml{margin-left:auto;color:var(--mut);font-size:14px}
-  h1{font-size:30px;margin:40px 0 6px}
-  .sub{color:var(--mut);margin-bottom:26px}
-  h2{font-size:21px;margin:34px 0 12px;padding-left:12px;border-left:4px solid var(--acc)}
-  h3{font-size:16px;margin:18px 0 8px;color:var(--acc2)}
-  .card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px;margin:12px 0}
-  p,li{color:#d7e1ea}
-  ul,ol{padding-left:22px;margin:8px 0}
-  li{margin:5px 0}
-  code{background:#0a131c;border:1px solid var(--line);border-radius:6px;padding:1px 7px;font-size:13px;color:var(--acc)}
-  .warn{background:rgba(251,191,36,.08);border:1px solid rgba(251,191,36,.4);border-radius:12px;padding:14px 16px;margin:14px 0;color:#fde68a}
-  .ok{color:var(--acc);font-weight:700}
-  /* et.187c: long paths/commands used to push the tables out of the 880px
-     column ("列表出格"). Fixed layout + anywhere wrapping keeps them inside. */
-  table{width:100%;max-width:100%;border-collapse:collapse;margin:10px 0;font-size:14px;table-layout:fixed}
-  th,td{border:1px solid var(--line);padding:9px 11px;text-align:left;vertical-align:top;
-    word-break:break-word;overflow-wrap:anywhere}
-  code{word-break:break-all;overflow-wrap:anywhere}
-  pre{overflow-x:auto;max-width:100%}
-  img{max-width:100%;height:auto}
-  th{background:#0f1a24}
-  .top{color:var(--mut);font-size:13px;text-decoration:none}
-  a{color:var(--acc2)}
+  :root{
+    --bg:#f6f7f9; --ink:#0f1216; --mut:#5d6570; --line:rgba(15,18,22,.10);
+    --glass:rgba(255,255,255,.72); --glass-strong:rgba(255,255,255,.9);
+    --shadow:0 10px 34px rgba(24,32,44,.10); --accent:#2f6df6;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:16px/1.7 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif}
+  body::before{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+    background:
+      radial-gradient(44% 38% at 10% 6%, rgba(120,170,255,.26), transparent 60%),
+      radial-gradient(42% 40% at 90% 10%, rgba(190,205,255,.22), transparent 62%),
+      linear-gradient(180deg,#fdfdfe,#eef1f5 65%,#e9edf2)}
+  body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;opacity:.4;
+    background-image:radial-gradient(rgba(15,18,22,.15) 1px,transparent 1px);background-size:22px 22px}
+  a{color:var(--accent);text-decoration:none}
+  .wrap{max-width:900px;margin:0 auto;padding:0 20px}
+  header{position:sticky;top:0;z-index:20;backdrop-filter:blur(18px) saturate(1.4);
+    background:rgba(255,255,255,.62);border-bottom:1px solid var(--line)}
+  nav{display:flex;align-items:center;gap:8px;height:62px}
+  .logo{font-weight:800;letter-spacing:.14em;font-size:20px;color:var(--ink)}
+  .logo span{color:var(--accent)}
+  nav .links{margin-left:auto;display:flex;gap:6px;flex-wrap:wrap}
+  .chip{padding:7px 14px;border-radius:999px;border:1px solid var(--line);background:var(--glass);font-size:14px;color:var(--mut)}
+  .chip.on,.chip:hover{color:var(--ink);background:var(--glass-strong);border-color:rgba(47,109,246,.35)}
+  h1{font-size:clamp(28px,5vw,42px);margin:44px 0 10px;letter-spacing:-.4px;color:var(--ink)}
+  .lead{color:var(--mut);margin:0 0 22px;font-size:17px}
+  .toc{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 26px}
+  .toc a{font-size:13.5px;padding:6px 12px;border-radius:999px;background:var(--glass);border:1px solid var(--line);color:var(--ink)}
+  details{background:var(--glass);backdrop-filter:blur(14px);border:1px solid rgba(255,255,255,.75);
+    box-shadow:var(--shadow);border-radius:16px;padding:4px 18px;margin:0 0 12px}
+  details[open]{background:var(--glass-strong)}
+  summary{cursor:pointer;font-weight:600;font-size:16px;padding:12px 0;list-style:none}
+  summary::-webkit-details-marker{display:none}
+  summary::before{content:"›";display:inline-block;margin-right:10px;transition:.2s;color:var(--accent)}
+  details[open] summary::before{transform:rotate(90deg)}
+  details p{margin:0 0 12px;color:#2c3238;font-size:14.8px}
+  details ul{margin:0 0 12px;padding-left:20px;color:#2c3238;font-size:14.8px}
+  details li{margin:4px 0}
+  code{font-family:ui-monospace,SFMono-Regular,Menlo,monospace;font-size:13.5px;background:rgba(15,18,22,.06);padding:2px 6px;border-radius:6px}
+  table{width:100%;border-collapse:collapse;font-size:14px;background:var(--glass-strong);border-radius:14px;overflow:hidden;margin:0 0 12px}
+  th,td{padding:10px 12px;border-bottom:1px solid var(--line);text-align:left}
+  th{font-size:12.5px;color:var(--mut);text-transform:uppercase}
+  tr:last-child td{border-bottom:0}
+  .box{background:var(--glass);border:1px solid rgba(255,255,255,.75);box-shadow:var(--shadow);border-radius:18px;padding:18px 20px;margin:22px 0}
+  .box h2{margin:0 0 8px;font-size:19px}
+  footer{margin:34px 0 40px;padding-top:22px;border-top:1px solid var(--line);color:var(--mut);font-size:14px}
 </style>
-  <link rel="stylesheet" href="assets/et-dark.css">
-  <meta name="theme-color" content="#0a1020">
-  <style>html,body{background:#0a1020;color:#eef3ff;color-scheme:dark}</style>
 </head>
 <body>
-<header><div class="navin">
-  <img src="icon.png" alt="" />
-  <span class="brand">Nightmare Road-ET · 使用文档</span>
-  <a class="ml" href="index.html">← 返回官网首页</a>
-</div></header>
-<div class="wrap">
-  <h1>Nightmare Road-ET 官方使用文档</h1>
-  <p class="sub">安卓端本地 AI 绘画（Stable Diffusion / Qwen Image），离线出图、无云端上传。开发者：ET · 当前手机版 v3.0.0-et.25（build 99，包名 etc.github.ai）：修复 SD1.5 点生成即“未知错误/无法连接 8081”——错误按真实原因分类（崩溃信号/内存不足/ABI 或 .so 加载失败/模型缺件损坏/超时），“图生图”未选图时自动按文生图不再空图崩引擎，启动前自检模型产物，预构建包下载做 zip CRC 与产物完整性闸门、断点续传坏包重下；英文/负向提示完全离线逐字透传、中文无网本地继续；检测更新改前台服务不中断；模型列表两个加号合并；新增「关于→导出诊断日志」。et.23 修复转换假完成/卡死（退出码0＋6产物齐全＋原子标记＋收尾提示）。电脑版为 v3.0.1（与手机同款界面、52 个模型、真实校验就绪状态机、统一 models/outputs/tmp/config 目录、设置可滚动、窗口可缩放最大化）。et.21 起 Illustrious/千问进入 CPU 列表并按 32/64 位机型解锁、SD1.5 GPU(OpenCL) 默认开；et.20 修复 32/64 位本机转换闪退与锁屏后台中断；et.19 起千问 Qwen Image 2.1 共 4 个量化版本；NPU 按机型加锁、Illustrious v16、系统安装器、MIT。</p>
-
-  <div class="card">
-    <strong>快速开始三步：</strong>
-    <ol>
-      <li>安装并打开，授予<strong>存储权限</strong>（模型与图片存到 <code>/storage/emulated/0/NightmareRoad-ET</code>）；首次下载/安装更新时按提示允许<strong>安装未知应用</strong>。</li>
-      <li>在「CPU Models」选一个模型（新手推荐 ChilloutMix / Photon / DreamShaper），点<strong>下载</strong>，等待下载并在本机转换完成。</li>
-      <li>点进模型，输入提示词，点<strong>生成图像</strong>，结果在「生成结果」页，可保存到相册。</li>
-    </ol>
-  </div>
-
-  <h2>一、安装与权限</h2>
-  <div class="card">
-    <ul>
-      <li>支持 Android 9（API 28）及以上，安装包同时内置 <code>arm64-v8a</code> 与 <code>armeabi-v7a</code>，<strong>32 位手机可直接用 CPU/GPU 出图</strong>。</li>
-      <li>需要的权限：网络（下载模型）、存储/所有文件访问（存模型和成品图）、通知（显示下载进度）、安装未知应用（应用内更新）。</li>
-      <li>所有模型与文件都在公共目录 <code>/storage/emulated/0/NightmareRoad-ET</code>（<code>models/</code> 放模型，<code>temp_downloads/</code> 放下载临时文件）；无该权限时回退到应用私有目录。</li>
-    </ul>
-  </div>
-
-  <h2>二、下载模型与下载源</h2>
-  <div class="card">
-    <p>模型分两类：<strong>预置包</strong>（下完即用）与<strong>转换类 SD1.5</strong>（先下约 2GB 原始权重，再在本机转换一次，之后直接用）。</p>
-    <h3>切换下载源（下载慢时用）</h3>
-    <p>模型列表右上角菜单 → <strong>设置 → 下载地址</strong>，可选：</p>
-    <table>
-      <tr><th>下载源</th><th>说明</th></tr>
-      <tr><td>魔搭 ModelScope（默认·国内最快）</td><td>阿里国内 CDN，国内下载快，推荐</td></tr>
-      <tr><td>hf-mirror</td><td>Hugging Face 国内镜像，预置包默认走它</td></tr>
-      <tr><td>Hugging Face 官方</td><td>海外官方源，国内可能较慢</td></tr>
-      <tr><td>自定义</td><td>可填自己的镜像根地址</td></tr>
-    </table>
-    <p>所选源作为首选，<span class="ok">其它源会自动作为回退</span>：某个源慢或连不上会自动换源续传，不会卡死。</p>
-    <h3>断点续传 / 后台 / 关机恢复</h3>
-    <ul>
-      <li>下载与转换在<strong>前台服务 + 通知栏</strong>进行，切后台、锁屏仍继续，通知栏显示进度。</li>
-      <li>支持 HTTP Range 断点续传：断网、杀进程、关机重启后再次点击会接着下，不重头。</li>
-      <li>et.23 起，转换成功的唯一标准是：转换进程<strong>退出码为 0</strong>、写出完成标记，且 <strong>6 个输出文件（clip/unet/vae_decoder/vae_encoder 权重与 pos_emb/token_emb）都存在、非空、字节数与清单一致</strong>。进度到 100% 后会进入“正在收尾写入”阶段（最后一个大张量落盘较慢，属正常，请勿关闭）；半成品不会被当成可用模型，失败会保存日志并允许重试，重启后也不会把残缺产物误判为已转换。</li>
-    </ul>
-    <h3>从链接导入任意模型（先检测兼容性，再下载）</h3>
-    <p>「CPU Models」页点 <strong>＋ 从链接导入模型</strong>，可添加市面上常见的<strong>单文件 SD1.5（.safetensors）</strong>。可粘贴：Hugging Face 模型页 <code>huggingface.co/作者/仓库</code>、hf-mirror 页/直链、魔搭 ModelScope 页或 FilePath 直链、任意网站的 .safetensors 直链。</p>
-    <p>粘贴后点<strong>检测兼容性</strong>，App 联网做四项预检并给出结论：① 必须是根目录单 <code>.safetensors</code>（不支持 diffusers 文件夹 / .gguf / .ckpt）；② 用与下载器相同的源顺序实测真实大小，<strong>必须 ≤ 2.14GB</strong>，否则 32 位转换会崩；③ 剩余空间需约为文件 2 倍（下载+转换）；④ 读 safetensors 文件头确认是 SD1.5（含 U-Net time_embed 与 CLIP），<strong>SDXL / DiT（千问、Flux）结构直接判不支持</strong>，不会让你白下几个 GB。</p>
-    <p>显示「本手机支持」后点<strong>确认并下载</strong>：走内置前台服务下载（魔搭首选、断点续传、通知栏、后台/关机续传），下完自动转换；<strong>转换成功后该模型永久出现在列表</strong>，以后直接点用，和内置模型完全一致。个别站点不支持 Range/HEAD 取不到大小时，请改贴 hf-mirror 或魔搭链接再检测。</p>
-  </div>
-
-  <h2>三、生成图片</h2>
-  <div class="card">
-    <ul>
-      <li><strong>提示词</strong>：可输入任意长度，应用不做内容审查。SD1.5 底层只认英文标签，输入中文会<strong>整句在线翻译成英文</strong>（et.22 起联网翻译超时缩短到 4 秒，失败更快安全回退；任何翻译只用于英文模型、<strong>不会替换你写的英文/负向提示词原文</strong>，无网时用内置词典兜底）；Qwen Image 原生支持中文，中文提示词逐字生效。</li>
-      <li><strong>负面提示词</strong>：填写不希望出现的内容，默认已带常见画质/瑕疵负向词。</li>
-      <li><strong>比例/尺寸</strong>：在生成页高级设置里选宽高比例（1:1、9:16、16:9 等）。SD1.5 宽高按 64 对齐，范围 128–512，避免非对齐导致马赛克。</li>
-      <li><strong>步数 / CFG</strong>：步数越高越细但越慢（低配建议 15–20）；CFG 建议 5–9，应用上限 9 以防止 32 位 fp16 溢出花屏。</li>
-      <li><strong>种子</strong>：留空每次随机；填同一数字可复现。</li>
-    </ul>
-  </div>
-
-  <h2>四、图生图（按原图改图）</h2>
-  <div class="card">
-    <ul>
-      <li>在生成页打开「图生图」，<strong>直接上传整张图片</strong>，不做强制裁剪或分割。</li>
-      <li><strong>重绘强度</strong>默认 0.45：数值越低越忠于原图（构图/姿态更像），越高改动越大。想要更像原图就调低，想大改就调高。</li>
-    </ul>
-  </div>
-
-  <h2>五、清晰度 / 放大（关于“4K”）</h2>
-  <div class="warn">
-    原生 4K（约 3840×2160，830 万像素）在 32 位低配手机上<strong>物理不可行</strong>：扩散按像素平方增长算力与内存，4K 相对 512² 约 32 倍负载，32 位进程会内存不足崩溃或耗时数十分钟。这不是软件限制。<br>
-    实际做法：32 位默认 384、64 位默认 512（64 对齐、PNG 无损保存）保证清晰不花屏；需要更大尺寸时，用应用内的 <strong>高清放大（Upscaler）</strong>把成品放大到更高分辨率。
-  </div>
-
-  <h2>六、语言与主题</h2>
-  <div class="card">
-    <ul>
-      <li>模型列表菜单 → 设置 →「语言」：<strong>简体中文 / English / 繁體中文</strong>，点选后整个应用（含模型列表名称、描述、通知）立即刷新；如个别文字仍是旧语言，返回列表或重进页面即可。</li>
-      <li>「外观」可切换深色/浅色与主题色，支持安卓 12+ 动态取色。</li>
-    </ul>
-  </div>
-
-  <h2>七、Qwen Image 2.1 与机型要求（et.16 起按机型过滤）</h2>
-  <div class="card">
-    <p>「NPU Models」标签页内置 <strong>Qwen Image 2.1</strong>、<strong>Qwen Image 2.1 UC Q4_0</strong>、Z-Image Turbo、FLUX.2 Klein 等大模型（约 6.7–10.8GB，走高通 Adreno NPU）。</p>
-    <ul>
-      <li><strong>32 位手机</strong>：列表<strong>只显示能真实运行的 SD1.5 CPU/GPU 模型</strong>（几十个，含链接导入），不会出现点了才跑不动的大模型。</li>
-      <li><strong>64 位手机</strong>：列表显示全部模型；但大 DiT/SDXL 仍需对应芯片。<strong>下载前会再做一次硬件与内存预检</strong>——芯片不支持会提示“本手机无法运行”，内存不足会提示需要/现有内存并阻止下载，避免白下 10GB。</li>
-    </ul>
-    <div class="warn">
-      大 DiT 需要 <strong>骁龙 8 至尊版（SM8750）及以上、arm64、Android 12+</strong>；SDXL-NPU 需骁龙 8 Gen3（SM8650）及以上。32 位或其它芯片请使用「CPU Models」里的 SD1.5。
+<header>
+  <div class="wrap"><nav>
+    <div class="logo">N<span>E</span>RT</div>
+    <div class="links">
+      <a class="chip" href="index.html">首页</a>
+      <a class="chip" href="server.html">服务端</a>
+      <a class="chip on" href="help.html">帮助</a>
+      <a class="chip" href="https://github.com/ETQWFD/NightmareEditRoad-ET">仓库</a>
     </div>
+  </nav></div>
+</header>
+
+<div class="wrap">
+  <h1>帮助与排查</h1>
+  <p class="lead">先说结论：<b>修图失败一定要看弹窗里的日志</b>，复制或截图发给我，比描述“卡住了”有用一百倍。</p>
+
+  <div class="toc">
+    <a href="#install">安装</a><a href="#model">模型下载 / 导入</a><a href="#zero">卡在 0%</a>
+    <a href="#engine">引擎无法加载</a><a href="#eta">预计时间</a><a href="#switch">切页中断</a>
+    <a href="#steps">步数与画质</a><a href="#perf">低配 / 高配</a><a href="#lang">语言与提示语</a>
+    <a href="#update">检查更新</a><a href="#contact">加群反馈</a>
   </div>
 
-  <h2>八、应用内更新（et.16 起多镜像加速）</h2>
-  <div class="card">
+  <details id="install" open>
+    <summary>怎么安装 / 装完打不开</summary>
+    <p>1）在 <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/latest">Releases</a> 下载 <code>NERT_*.apk</code>（一个 APK 同时含 32 位与 64 位原生库，老机新机都是同一个包）。</p>
+    <p>2）首次安装允许“未知来源”。安装后打开，系统只会问两件事：Android 13+ 的通知权限（用于下载/修图进度），Android 9/10 的存储权限（用于读写图片）。</p>
     <ul>
-      <li>设置 → <strong>检测更新</strong>，联网比对版本号；有新版会在应用内直接下载，完成后<strong>调起系统打包安装程序</strong>安装（首次需允许“安装未知应用”）。</li>
-      <li>下载时会<strong>并行探测 GitHub 直链与多个国内加速镜像，自动选最快的一个</strong>，并支持断点续传（中断/杀进程后继续，不重头）。</li>
-      <li>也可在官网或 GitHub Releases 手动下载最新 APK。</li>
+      <li>打不开 / 秒退：卸载重装，或把 <code>Android/data/etc.editroad.et</code> 与下载目录里的残留删掉再装。</li>
+      <li>MIUI / ColorOS / OriginOS：在电池设置里把 NERT 设为“无限制”，否则锁屏后会被系统杀掉（表现为修图突然不动）。</li>
     </ul>
-  </div>
+  </details>
 
-  <h2>九、错误代码对照与解决方法</h2>
-  <div class="card">
+  <details id="model">
+    <summary>模型下载太慢、失败，或者想用自己下载的模型</summary>
+    <p><b>下载</b>：首页列表点模型 → 确认体积 → 下载。设置里可以切换下载源：<code>自动</code>（按网络择优）、<code>国内镜像</code>、<code>官方源</code>。镜像不通时手动换成官方源，反之亦然。</p>
+    <p><b>自己导入</b>：首页“自己导入模型”卡片 →</p>
+    <ul>
+      <li><b>本地文件</b>：选手机里的 <code>.safetensors</code> / <code>.ckpt</code>（SD1.5 架构），应用会在本机转换成可用格式，进度显示在首页卡片里，可以切到别的页面，转换不会中断。</li>
+      <li><b>链接导入</b>：粘贴 HuggingFace 的模型链接，应用会登记成一个自定义模型并开始下载 + 转换。</li>
+      <li>导入的模型同样出现在修图页顶部的切换列表里，也能随时切回去。</li>
+    </ul>
+    <p>注意：SDXL、Flux、DiT 等新架构以及 NPU 专用包不能用于本机修图链路，导入后只会出现在完整模型列表，不会进入修图切换列表。</p>
+  </details>
+
+  <details id="zero">
+    <summary>进度一直是 0%、按钮显示“修图中…”却不动</summary>
+    <p>这一版已经把“假 0%”当成缺陷处理：修图由独立的批量控制器执行，界面只订阅它的状态，所以不再有“离开页面就把任务取消”的问题（旧版报 <code>rememberCoroutineScope left the composition</code>）。</p>
+    <p>现在如果引擎没起来，会明确告诉你原因并弹日志窗：</p>
+    <ul>
+      <li><b>200 秒内引擎没就绪</b> → 弹窗会给出引擎启动日志末尾、退出码含义（137=内存不足被系统杀，134/139=原生崩溃）、内存与存储余量。</li>
+      <li><b>连上了但 150 秒没有第一个 step</b> → 判定为引擎无首步进度，弹窗带请求参数与端口状态。</li>
+      <li><b>某个 step 后 20 分钟不动</b> → 判定卡死，主动结束并弹日志。</li>
+    </ul>
+    <p>自查顺序：换一个更小的模型 → 设置里把渲染器从 GPU 改成 CPU → CPU 压力页把线程数调成“大核数”→ 关掉其它占用内存的应用。</p>
+  </details>
+
+  <details id="engine">
+    <summary>提示“模型引擎无法加载”</summary>
+    <p>常见三种：</p>
+    <ul>
+      <li><b>模型文件不完整</b>：日志窗里会列出模型目录文件清单。缺 <code>vae</code> / <code>unet</code> / <code>text_encoder</code> 时，回首页对该模型重新下载或重新导入。</li>
+      <li><b>内存不够</b>：32 位进程可用内存有限。日志窗会显示总内存、可用内存、位数与线程数；把步数降到 20–30、一次只修 1 张。</li>
+      <li><b>GPU 驱动不兼容</b>：设置里把渲染器切到 CPU；应用本身也会在 GPU 失败时回退 CPU，并把 <code>gpu_unstable</code> 记进日志。</li>
+    </ul>
+  </details>
+
+  <details id="eta">
+    <summary>“预计剩余时间”准不准</summary>
+    <p>第一张是估算：按 <code>实测单步耗时 × 步数 × 队列张数</code>，没有实测值时按机型档位给保守估算。</p>
+    <p><b>每完成一张，应用会实测这一步的真实耗时并记住</b>（<code>editroad_ms_per_step</code>），后续同一机型的预计就会明显贴合实际。切到别的标签页或锁屏期间产生的耗时也会被算进去，不会“预计 27 秒然后一动不动”。</p>
+    <p>如果你发现预计长期偏大或偏小，把日志窗内容发我，我按机型再调系数。</p>
+  </details>
+
+  <details id="switch">
+    <summary>生成中途切页面会不会中断</summary>
+    <p>不会。底部四栏（历史 / CPU压力 / 修改 / 设置）都是常驻的，切换时不销毁任务；生成中切换模型会被拒绝并提示，避免修到一半换模型。CPU 压力页还会实时显示“修图中 x%（i/N 张）”。</p>
+  </details>
+
+  <details id="steps">
+    <summary>步数该设多少</summary>
+    <p>默认 <b>40</b>，滑杆可设 10–100，另有 20 / 30 / 40 / 60 / 80 快捷档。经验：</p>
     <table>
-      <tr><th>报错 / 代码</th><th>含义</th><th>解决方法</th></tr>
-      <tr><td><code>Failed to connect to localhost/127.0.0.1:8081</code></td><td>本地推理引擎没启动好或模型未转换成功。</td><td>退出模型页重进、等“已下载”状态；确认没被安全软件禁止执行本地程序；仍不行则删除该模型重新下载转换。</td></tr>
-      <tr><td><code>ETIMEDOUT</code> / <code>failed to connect to huggingface.co ...:443</code></td><td>海外源连不上/超时。</td><td>设置里把下载源切到<strong>魔搭 ModelScope</strong> 或 hf-mirror；网络恢复会自动换源续传。</td></tr>
-      <tr><td><code>Executable not found .../lib/arm/libstable_diffusion_core.so</code></td><td>老版本 32 位缺原生引擎（et.12 起已修复）。</td><td>更新到最新版；卸载旧版后全新安装。</td></tr>
-      <tr><td><code>Cannot read tensor data: model.diffusion_model.time_embed.0.weight</code> / <strong>退出码 134</strong></td><td>原始权重超过 32 位 2.14GB 寻址上限或文件不是 SD1.5，转换崩溃。</td><td>用列表内置模型或“链接导入”预检通过的单文件 SD1.5（≤2.14GB）；SDXL/DiT 文件会被预检拒绝。</td></tr>
-      <tr><td><code>Prompt empty</code></td><td>点生成时正向提示词为空。</td><td>在“图像生成提示”框里输入内容（中文会自动翻译成英文标签）。</td></tr>
-      <tr><td>生成结果<strong>全是马赛克/碎玻璃</strong></td><td>尺寸未 64 对齐、CFG 过高导致 fp16 溢出，或模型没转完整。</td><td>用应用内置比例、CFG≤9；确认显示“已下载”；必要时删除重下。</td></tr>
-      <tr><td>成品<strong>模糊/变形/不听提示词</strong></td><td>分辨率过低、步数太少，或中文整句翻译没生效；旧版本保存相册用 JPEG 有损。</td><td>升级到 et.22：成品保存相册已改<strong>无损 PNG</strong>、中文翻译失败安全回退不替换原文；步数保持 20 左右；可保持联网让中文整句翻译生效；需要大图用“高清放大”。</td></tr>
-      <tr><td><strong>本手机无法运行 / 内存不足</strong>（下载弹窗）</td><td>大模型需要更新的 64 位 NPU 或更大内存。</td><td>在本设备改用 SD1.5 模型；或换符合要求的手机下载该大模型。</td></tr>
-      <tr><td><strong>通知栏无下载进度 / 切后台就停</strong></td><td>未授通知权限或被系统限制后台。</td><td>授予通知权限；在系统电池设置里把本应用设为“不限制后台/允许后台活动”。</td></tr>
-      <tr><td><strong>安装时点了没反应</strong></td><td>未允许“安装未知应用”。</td><td>按弹窗跳到系统设置允许本应用安装，再点一次更新。</td></tr>
-      <tr><td><code>HTTP 4xx/5xx</code>（更新下载）</td><td>镜像临时异常。</td><td>稍后重试；应用会自动切换其它镜像，也可去官网/Release 手动下载。</td></tr>
+      <thead><tr><th>步数</th><th>适合</th><th>代价</th></tr></thead>
+      <tbody>
+        <tr><td>10–20</td><td>快速试构图、低配手机</td><td>细节偏软</td></tr>
+        <tr><td>30–50</td><td>日常修图（推荐区间）</td><td>耗时线性增长</td></tr>
+        <tr><td>60–100</td><td>发丝、织物、手部等细节</td><td>中低配手机耗时明显增加，画质收益递减</td></tr>
+      </tbody>
     </table>
-    <p style="margin-top:10px">遇到表里没有的错误，请把<strong>完整英文原文</strong>（含退出码）发给开发者 ET 以便定位。</p>
-  </div>
+    <p>尺寸、CFG、重绘强度和防畸形反向词都不需要你手动填：输出长边按运行内存自动选（384 / 512 / 640 / 768），一次最多 16 张，超过 1536 长边的原图会先等比缩放。</p>
+  </details>
 
-  <h2>十、常见问题</h2>
-  <div class="card">
-    <h3>下载慢 / 超时</h3><p>把下载源切到「魔搭 ModelScope」；应用更新走多镜像自动选最快；确认网络正常；中断后直接续传即可。</p>
-    <h3>后台/锁屏不能生成、发热大</h3><p>et.16 起生成服务持有唤醒锁并使用大堆；请在系统设置允许后台活动。低配机建议步数 15–20、尺寸 384，发热与耗时会明显下降。</p>
-    <h3>转换失败 / 退出码 134</h3><p>多为原始权重超过 32 位 2.14GB 寻址上限的旧模型；列表内现有模型均经过文件头校验、32 位可安全转换。若仍报错，把英文报错发开发者。</p>
-    <h3>转换卡在最后 / 提示完成却没转好（假完成）</h3><p>请升级到 v3.0.0-et.23：转换有真实张量级进度，进度到 100% 后显示“正在收尾写入”，最后一个大张量与 VAE 落盘本就较慢（长时间无新进度会提示“仍在转换”，不会误杀）；只有退出码为 0 且 6 个输出文件齐全、大小与清单一致才算成功。若失败，应用临时目录下会生成 <code>convert_*.log</code>，把该日志连同机型/SoC/安卓版本发开发者；已下载的源会保留，点重试不会重新下载。</p>
-    <h3>点生成提示“未知错误 / 无法连接 8081”</h3><p>请升级到 v3.0.0-et.24：现在会显示<b>真实原因</b>（引擎崩溃信号 / 内存不足被系统杀死 / .so 加载失败或 ABI 不符 / 模型文件缺失或损坏 / 连接超时），而不是统一文案。常见诱因是模型没下完整或损坏——应用在启动引擎前会自检 6 个产物，缺件会提示重新下载；预构建模型包下载也已加 zip 完整性校验、断点续传与坏包重下。若“图生图”标签高亮但没选图，et.24 会自动按文生图处理，不再空图导致引擎崩溃。仍失败时请用下方“导出诊断日志”回传。</p>
-    <h3>导出诊断日志（反馈首选）</h3><p>在模型列表右上角/设置里打开<b>“关于”</b>，点<b>“导出诊断日志”</b>，会在公共目录 <code>/storage/emulated/0/NightmareRoad-ET/</code> 生成 <code>diagnostics_时间.txt</code> 并弹出分享。内容含：App 版本、机型/SoC/ABI/安卓版本/内存、各模型目录文件与字节、引擎日志 <code>engine_*.log</code>、转换日志 <code>convert_*.log</code>、最近 logcat、各下载源 HTTP 状态。把该文件发开发者即可一次性定位，无需截图描述。</p>
-    <h3>断网 / 飞行模式能否出图</h3><p>可以。本地 SD1.5 出图不依赖网络：英文与负向提示词一律不联网、逐字生效；仅中文提示词会在<b>有网时</b>做在线整句翻译增强，无网或超时会立即改用内置词典/原文继续，不会因此报错或卡住。</p>
-    <h3>成品发糊/不听提示词/生成卡顿</h3><p>请使用最新版：相册成品为无损 PNG、英文/负向提示词逐字透传、中文翻译失败安全回退、过程预览降采样并节流；1:1 实际输出 512×512、各边 64 对齐，步数 20 / CFG 7 / dpm 默认，需要大图用放大功能，低配机尺寸用 384 更流畅。转换/出图耗时随分辨率（像素平方）上升、老旧 32 位 CPU 更久，属正常物理开销，非卡顿 bug。</p>
-    <h3>出图满屏碎玻璃 / 马赛克噪声（et.25 重点修复）</h3><p>多发生在部分 Adreno/Mali 机型用 GPU(OpenCL) 出图或图生图时，属于底层 fp16 计算发散。et.25 起应用会对每张结果做健康检测：一旦判定为纯色/裁切/纯随机噪声，坏图不会保存；若本次开着 GPU，会<b>自动关闭 GPU、改用 CPU 安全参数（CFG 7 / dpm++2m / 20 步 / 512）重画一次</b>，成功后记住“本机 GPU 不稳定”、以后默认 CPU（你仍可在设置手动再开）。若 CPU 重画仍是碎玻璃，更可能是模型文件损坏，应用会提示并提供“重新校验/重转/重新下载”。图生图重绘强度默认 0.45、限制在 0.3–0.7，避免强度过高退化成噪声。若升级后仍出现，请在右上角<b>“日志”</b>页把 <code>HEALTH_BAD</code> 与 <code>engine_*.log</code> 发回。</p>
-    <h3>图片比例切换不生效（et.25 修复）</h3><p>GPU/QNN 版同名 SD1.5（如 Anything V5.0）此前点 1:1/3:4/4:3 只改文字。et.25 起所有 SD1.5（CPU 与 GPU）都会按比例真实重算像素（64 对齐）并让引擎按新尺寸重启，参数行会显示真实像素（如 512×512 / 384×512）。</p>
-    <h3>“日志”页怎么用（et.25 新增）</h3><p>模型列表右上角三点菜单 → <b>日志</b>。集中显示引擎启动/崩溃、模型下载、转换、生成、更新、云上传等事件，并落盘到 <code>/storage/emulated/0/NightmareRoad-ET/logs/app.log</code>（单文件约 2MB、保留 3 个自动滚动覆盖，应用不提供手动删除）。可按类别过滤、整段或单条复制、分享；登录云备份后还可一键上传到云端 <code>log/</code>。</p>
-    <h3>云备份：如何生成并填写令牌（PAT）</h3><p>应用<b>不</b>要求也不接收你的账号密码，使用各平台官方的“个人访问令牌(PAT)”：<br>· <b>GitHub</b>：网页登录后 头像 → Settings → Developer settings → Personal access tokens → 选 Tokens (classic) 或 Fine-grained token → Generate，勾选/授予 <code>repo</code>（仓库读写）权限，复制生成的令牌。<br>· <b>Gitee</b>：头像 → 设置 → 安全设置 → 私人令牌 → 生成新令牌，勾选 projects 等所需权限后复制。<br>然后在应用 设置 → <b>账号/云备份</b> 选择平台、粘贴令牌；应用会先校验并显示你的账号名，再自动创建<b>私有仓库 <code>NightmareRoad-ET-Backup</code></b>（已存在则复用）。成品图“上传”进 <code>png/</code>、日志进 <code>log/</code>，重名不覆盖。令牌只用 Android 系统密钥库加密保存、不会出现在日志或诊断里，可随时“退出登录”清除。<b>未登录或无网络时本地一切照常可用</b>，仅上传按钮禁用并提示。</p>
-    <h3>更新下载中断 / 装不上 / 模拟器（et.25）</h3><p>更新安装包保存在 <code>NightmareRoad-ET/temp_downloads</code>，下到一半关闭后再更新会用 HTTP Range <b>断点续传</b>（仅当服务器支持且总大小一致才续，不会盲目清空已下部分），前台服务＋通知使切后台不中断；完成优先直调系统 PackageInstaller，失败回退文件安装器并可引导“允许安装未知应用”、打开安装包所在目录。更新源 <b>GitHub 优先，连不上时自动尝试 Gitee 镜像</b>。纯 x86/x86_64 模拟器没有 ARM 原生引擎（也无可用 x86_64 引擎），应用会明确提示“请使用真机或 arm64 镜像”，不会崩溃或假成功。</p>
-  </div>
-
-  <h2>十一、链接</h2>
-  <div class="card">
+  <details id="perf">
+    <summary>低配 / 中配 / 高配怎么更快</summary>
     <ul>
-      <li>官网首页：<a href="index.html">etc.tw.kg</a></li>
-      <li>仓库 / Release：<a href="https://github.com/ETQWFD/NightmareRoad-ET">github.com/ETQWFD/NightmareRoad-ET</a></li>
-      <li>电脑版（Windows x64）v3.0.1 安装包与绿色包见 GitHub Releases 的 <code>desktop-v3.0.1</code>（<code>NightmareRoad-ET-Setup-3.0.1.exe</code> / <code>NightmareRoad-ET-Windows-Portable-3.0.1.zip</code>）：界面与手机同款，下载后真实校验通过才算就绪，数据统一放在程序当前目录 <code>models/ outputs/ tmp/ config/</code>，设置页完整可滚动、窗口可缩放/最大化；CPU 页 37 个 SD1.5 可用内置 stable-diffusion.cpp CPU 引擎本地出图，NPU 页 15 个手机专属模型按电脑真实硬件能力如实加锁。</li>
+      <li><b>低配（3–4 GB、32 位）</b>：渲染器选 CPU，步数 20–30，一次 1 张，线程数设 2–4。</li>
+      <li><b>中配（6 GB）</b>：默认自动（优先 GPU，失败回退 CPU），步数 40。</li>
+      <li><b>高配（10 GB+）</b>：可以放心 60–100 步 + 批量，CPU 压力页用 6 秒压力测试确认大核都在跑。</li>
+      <li>线程数设为“自动”时会用大核数；手动改小可降温，改大不一定更快（小核拖慢整体）。</li>
     </ul>
-    <p style="color:var(--mut);margin-top:10px">版权 / 开发者：ET（广东梅州）。应用外壳与安装程序版权归 ET；底层推理引擎遵循其各自开源许可（MNN / stable-diffusion.cpp 等）。</p>
+  </details>
+
+  <details id="lang">
+    <summary>提示语能不能写中文？界面语言怎么换</summary>
+    <p>提示语中文、英文都可以，也可以中英混写。中文提示语会先翻译成模型能理解的英文再进模型；翻译服务不可用时会退回内置离线词典，不会因此失败。留空则只做画质增强，几乎不动原图内容。</p>
+    <p>界面语言在设置页切换：简体中文 / English / 日本語（三档）。切换后建议重启一次应用，个别文字来自静态文案。</p>
+  </details>
+
+  <details id="update">
+    <summary>检查更新走的是哪里</summary>
+    <p>设置页“检查更新”读取新仓库的最新发布：<code>api.github.com/repos/ETQWFD/NightmareEditRoad-ET/releases/latest</code>，
+      并按本机 CPU 架构选择对应安装包。若提示“无法获取版本信息”，多数是网络不通（无法访问 api.github.com），可以换网络或挂代理再试。</p>
+  </details>
+
+  <div class="box" id="contact">
+    <h2>反馈与加群</h2>
+    <p>遇到任何问题，请带上：版本号、机型、Android 版本、失败弹窗里复制的日志、（可选）截图或录屏。</p>
+    <p>QQ 群：<b>1078799843</b> · <a href="http://qm.qq.com/cgi-bin/qm/qr?_wv=1027&amp;k=FEhaN_bPJIhurqBLoRhqkhmHnkRz17bu&amp;authKey=6nfqCQdGizOwMqbcBD0tfYcueiFQJmGHHefDFFBt0j0jT%2FqSP6dVif%2FZ39%2FfGRc3&amp;noverify=0&amp;group_code=1078799843">点此加群</a></p>
+    <p>仓库与 Issue：<a href="https://github.com/ETQWFD/NightmareEditRoad-ET">github.com/ETQWFD/NightmareEditRoad-ET</a></p>
   </div>
 
-  <p style="margin-top:26px"><a class="top" href="#top">↑ 回到顶部</a></p>
-</div>
+  <div class="box">
+    <h2>这个 App 不包含的东西</h2>
+    <p>没有登录、没有额度、没有签到兑换、没有音乐后台、没有图片社区与聊天社区、没有图片上传。所有修图都在本机完成，图片不会离开你的手机。</p>
+  </div>
 
-<div class="wrap" style="margin-top:20px">
-  <h2>et.26 常见问题（云备份 / 模拟器 / 日志）</h2>
-  <p><b>1. 云备份令牌怎么取？</b> <b>GitHub</b>：Settings → Developer settings → Personal access tokens → 生成 Classic 令牌并勾选 <code>repo</code>；若用 fine-grained 令牌需包含 Administration（建仓）与 Contents（读写）权限。登录时若提示 403 “Resource not accessible”，说明该令牌无建仓权限，改用 Classic 令牌或选“使用已有仓库”手动填 owner/repo 绑定。<b>Gitee</b>：头像 → 设置 → 私人令牌 → 生成新令牌，勾选 <code>user_info</code>、<code>projects</code>。上传后成品 PNG 在私有仓库 <code>png/</code>、日志在 <code>log/</code>。令牌只存本机系统密钥库，可退出登录。</p>
-  <p><b>2. 设备码授权是什么？</b> GitHub 设备码授权需开发者注册 OAuth Apps 拿到 client_id（设备流无需 secret）；在未配置 client_id 前该入口暂不可用，不影响用 PAT 登录。</p>
-  <p><b>3. 关注/Star</b> 登录流程里默认勾选、可随时取消；失败只写日志，不影响登录与上传。</p>
-  <p><b>4. 模拟器/虚拟机支持</b>：本版内置 x86_64 原生引擎，纯 x86_64 模拟器可原生跑 SD1.5；若设备无匹配 ABI 会给出中文提示，请换 arm64 真机或支持 ARM 转译的镜像。</p>
-  <p><b>5. 更新双源与断点续传</b>：GitHub 优先、Gitee 兜底；下载采用 .part 断点续传（仅当服务器回 206 且大小一致才续），安装时若提示“未知来源”请按引导允许后返回自动续装。</p>
-  <p><b>6. 日志与错误位置</b>：右上角三点“日志”查看运行日志；“关于 → 导出诊断日志”打包引擎/转换/下载/机型信息；公共目录 <code>NightmareRoad-ET/logs/app.log</code>、<code>engine_*.log</code>、<code>convert_*.log</code>。应用可完全离线出图，联网仅用于云备份/更新。</p>
-
-  <h2>et.27 常见问题（后台保活 / 修图 / 机型门槛 / 内存）</h2>
-  <p><b>1. 熄屏后下载/转换/生成中断？</b> 这三类任务现在都以前台服务运行并持有 WakeLock 与 Wi-Fi 锁；首次发起长任务时会引导你关闭电池优化（可跳过，但跳过可能被系统挂起）。应用被回收后，下载按 .part 断点续传，转换按原子 finished 与 6 个产物对账，半成品不会显示为完成。</p>
-  <p><b>2. 修图模式怎么用？</b> 右上角三点选“修图”→ 选一个已下载且本机可用的模型 → 上传整张图（不裁剪）→ 填中文正向/负向提示 → 调重绘强度（0.3–0.7，默认 0.45）→ 点“修改图片”。结果进历史，可保存到相册或云备份。自动反推提示词暂未内置，直接用中文描述即可。</p>
-  <p><b>3. 哪些手机能跑大模型？</b> SD1.5 在全部 64 位安卓机（含华为麒麟、联发科、Exynos、Tensor）都能 CPU/GPU 跑，无 OpenCL 自动回退 CPU。SDXL/DiT/千问等大模型当前仅支持骁龙 Hexagon NPU（SM8650/8750 级别），华为等无 Hexagon 的机型 App 会如实锁定、不假标。</p>
-  <p><b>4. 图片尺寸/比例</b>：长边按内存自适应（≤6GB 512、≤10GB 640、&gt;10GB 768，均 64 对齐），支持 1:1/2:3/3:4/4:3/3:2/9:16/16:9 与自定义。</p>
-  <p><b>5. 提示“内存不足 std::bad_alloc”</b>：降低图片尺寸或步数后重试，或关闭其他后台应用。低内存设备会自动使用更保守的默认尺寸。</p>
-  <p><b>6. 出图碎玻璃/马赛克</b>：App 会自动检测并关闭 OpenCL、用 CPU 安全参数重试一次；若 CPU 仍异常会提示“疑似模型文件损坏”，可重新校验或重新下载模型。</p>
-
-  <h2>et.28 常见问题（后台保活 / 厂商设置 / 日志 / 修图）</h2>
-  <p><b>1. 熄屏后任务为什么会停？</b> 下载、解压、转换、生成、更新、修图现在都以前台服务运行并持有 WakeLock 与 Wi-Fi 锁；但国产 ROM 的电池/自启动管理可能仍会在熄屏或锁屏后清理后台。请在系统设置里允许本应用“自启动/后台运行/锁屏不清理/电池不优化”，首次发起长任务时 App 会引导。</p>
-  <p><b>2. 各品牌后台设置路径</b>：华为/荣耀——手机管家→应用启动管理→允许手动管理；小米/Redmi——设置→应用设置→授权管理→自启动，电池→应用省电→无限制；OPPO/一加/realme——设置→电池→应用电池管理→允许后台运行；vivo/iQOO——设置→电池→后台高耗电→允许；三星——设置→设备维护→电池→后台使用限制→不加入休眠。不同系统版本菜单名可能略有差异。</p>
-  <p><b>3. 日志与诊断位置</b>：App 内右上角“日志”、导出诊断；公共目录 <code>NightmareRoad-ET/logs/app.log</code>，以及 <code>engine_*.log</code>、<code>convert_*.log</code>、<code>crash_*.log</code>。诊断信息包含服务是否在前台、锁是否持有、是否在电池白名单、设备厂商。</p>
-  <p><b>4. 修图模式</b>：右上角三点“修图”→选一个已下载且本机可用的模型→上传整张图（不裁剪）→填中文正向/负向提示（负向词已预填可改）→调重绘强度（0.3–0.7，默认 0.45）→点“修改图片”，结果进历史可保存/云备份。</p>
-  <p><b>5. 微信/QQ 打不开或“已停止访问”</b>：平台可能对未 ICP 备案域名直接拦截，网页无法解除。请点右上角 ··· 选择“在浏览器打开/在 Safari 或 Chrome 中打开”，或直接到 GitHub Release 页下载。</p>
-
-  <h2>et.29：模型“文件不完整/缺少权重”如何处理</h2>
-  <p>SD1.5 模型分两种预转换包：sd-mnn 为 CPU 包（含 *.mnn.weight 六件套），sd-qnn 为骁龙 NPU 包（含 unet.bin/vae_*.bin/clip_v2.mnn），App 按机型自动选择。旧版曾对 NPU 包误报“文件不完整”，本版已按包族分别校验。若仍提示不完整，多为下载截断：删除该模型后在网络稳定时重新下载即可，已下部分会断点复用；仍失败请在日志页导出下载/转换日志反馈。</p>
-
-  <h2>et.30：内存、32 位老手机与 GPU(OpenCL)</h2>
-  <p><strong>切后台卡顿/被系统杀：</strong>本版做了内存治理——修图与历史大图统一采样解码、生成/转换任务结束后引擎子进程自动释放、关于页有“内存诊断”可查看 Java 堆/系统可用内存/引擎峰值。生成前若可用内存偏低会弹中文建议（不强制），可选择仍要生成或去调整尺寸。</p>
-  <p><strong>32 位老手机（exit 137）：</strong>32 位进程地址空间有限，512 及以上分辨率可能在出图中途被系统结束（日志里 exit code=137）。本版 32 位默认 384，且一旦检测到引擎中途死亡会自动重启引擎、降到 384 安全参数（dpm++2m、20 步、CFG 7）重试一次。建议老手机直接选 384 或更低，并关闭其他后台应用。</p>
-  <p><strong>GPU(OpenCL)：</strong>GPU 加速需要设备存在可用的 OpenCL 运行库（libOpenCL.so）。若未检测到，App 自动用 CPU（较慢），并在高级设置 GPU 开关下方显示“本机未检测到可用 GPU(OpenCL)”。可在“关于→导出诊断”里回传 GL_RENDERER/GL_VENDOR 与各 libOpenCL 路径是否存在，便于定位。</p>
+  <footer>
+    NERT · <a href="index.html">首页</a> · <a href="server.html">服务端</a> ·
+    <a href="https://github.com/ETQWFD/NightmareEditRoad-ET/releases/latest">下载</a>
+  </footer>
 </div>
 </body>
 </html>

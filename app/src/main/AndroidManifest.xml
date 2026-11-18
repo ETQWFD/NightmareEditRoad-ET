@@ -10,12 +10,6 @@
         android:name="android.permission.READ_EXTERNAL_STORAGE"
         android:maxSdkVersion="32" />
 
-    <!-- Models are kept in /storage/emulated/0/LocalDreamET, which needs All
-         files access on Android 11+. Sideloaded build (not Google Play). -->
-    <uses-permission
-        android:name="android.permission.MANAGE_EXTERNAL_STORAGE"
-        tools:ignore="ScopedStorage" />
-
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
@@ -24,24 +18,14 @@
 
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
 
-    <uses-permission android:name="android.permission.EXECUTE_PRIVATE_BINARY" />
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
-    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
-    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <!-- et.50: optional overlay keep-alive floating window during generation/API service. -->
-    <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
 
     <!-- In-app self update: download the APK and launch the system installer. -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
-    <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
 
     <application
         android:name=".LocalDreamApplication"
@@ -69,21 +53,6 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
-            </intent-filter>
-            <!-- 2026-11：GitHub 网页授权回跳：localdreamet://oauth?code=... -->
-            <intent-filter>
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="localdreamet" android:host="oauth" />
-            </intent-filter>
-            <!-- 2026-11：App Links，让 GitHub 回跳 https://etc.tw.kg/oauth.html 直接打开应用，
-                 不需要再依赖浏览器对自定义 scheme 的二次确认。 -->
-            <intent-filter android:autoVerify="true">
-                <action android:name="android.intent.action.VIEW" />
-                <category android:name="android.intent.category.DEFAULT" />
-                <category android:name="android.intent.category.BROWSABLE" />
-                <data android:scheme="https" android:host="etc.tw.kg" android:pathPrefix="/oauth.html" />
             </intent-filter>
         </activity>
 
@@ -113,25 +82,6 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
-        <service
-            android:name=".service.RemoteHostService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <!-- et.37 (Bug9): foreground service exposing a LAN A1111/OpenAI-compatible image API.
-             et.40: switched dataSync -> specialUse to match the on-device generation FGS
-             and avoid Android 14+ dataSync time limits / type restrictions. -->
-        <service
-            android:name=".service.LanImageService"
-            android:enabled="true"
-            android:exported="false"
-            android:foregroundServiceType="specialUse">
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="Local LAN HTTP API serving on-device image generation" />
-        </service>
-
         <!-- et.24: foreground service carrying the in-app APK update download. -->
         <service
             android:name=".service.UpdateDownloadService"
@@ -156,10 +106,6 @@
             android:exported="false" />
         <receiver
             android:name=".service.AutoExitReceiver"
-            android:enabled="true"
-            android:exported="false" />
-        <receiver
-            android:name=".utils.BgmControlReceiver"
             android:enabled="true"
             android:exported="false" />
 
