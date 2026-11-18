@@ -212,9 +212,10 @@ private fun GlassDock(tab: String, onTab: (String) -> Unit, modifier: Modifier =
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(28.dp),
-        color = Color(0xF7FFFFFF),
-        border = BorderStroke(1.dp, Color(0x80FFFFFF)),
-        shadowElevation = 18.dp,
+        // 白色页面上纯白 Dock 只靠阴影不够醒目：加一圈深色发丝描边 + 更高投影。
+        color = Color(0xFDFFFFFF),
+        border = BorderStroke(1.2.dp, Color(0x33000000)),
+        shadowElevation = 24.dp,
     ) {
         Row(
             modifier = Modifier

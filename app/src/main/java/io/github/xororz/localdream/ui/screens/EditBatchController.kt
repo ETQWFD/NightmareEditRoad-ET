@@ -17,12 +17,16 @@ import io.github.xororz.localdream.data.HistoryManager
 import io.github.xororz.localdream.data.Model
 import io.github.xororz.localdream.service.BackendService
 import io.github.xororz.localdream.service.BackgroundGenerationService
+import io.github.xororz.localdream.service.EditKeepAliveService
 import io.github.xororz.localdream.util.ChinesePrompt
 import io.github.xororz.localdream.util.ImageDiagnostics
+import io.github.xororz.localdream.utils.BatteryOptimization
 import io.github.xororz.localdream.utils.DeviceCapabilities
 import io.github.xororz.localdream.utils.EnginePort
 import io.github.xororz.localdream.utils.LogCapture
 import io.github.xororz.localdream.utils.saveImage
+import org.json.JSONArray
+import org.json.JSONObject
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,16 +47,25 @@ import java.util.Date
 /**
  * 修图批量任务控制器。
  *
- * 关键点：runner 挂在**自己的** CoroutineScope 上，不挂在 Compose 的
- * rememberCoroutineScope 上。因此
- *  - 切到历史 / CPU压力 / 设置、甚至退回首页或锁屏，任务都不会中断；
- *  - 不会再出现「rememberCoroutineScope left the composition」；
- *  - 进度、预计时间、结果统一由这里维护，界面只是订阅 [state]；
- *  - 任何失败都会带上引擎日志 / logcat / 模型目录清单，界面弹可复制的窗口。
+ * 设计要点（对应实机反馈的三类问题）：
+ *  1. runner 挂在**自己的** CoroutineScope 上，不挂 Compose 的 rememberCoroutineScope，
+ *     切页 / 回首页 / 锁屏都不会取消任务，也不会再出现
+ *     「rememberCoroutineScope left the composition」。
+ *  2. 队列保存为应用私有目录里的图片文件，并持久化一份任务清单（job.json）；
+ *     修图期间由 [EditKeepAliveService] 维持前台优先级。熄屏或进程被系统回收后
+ *     重新打开，队列、进度、结果都还在，并能从下一张接着跑 —— 解决“后台突然被删除”。
+ *  3. 预计时间按 (模型 / 渲染器 / 输出尺寸 / 步数) 分档标定，只统计真实的步进耗时，
+ *     并在跑起来后用实测进度外推修正 —— 解决“预计时间不准”。
+ *  4. 任何失败都会带上引擎日志 / logcat / 模型目录清单，界面弹可复制的窗口。
  */
 object EditBatchController {
 
-    data class QueueItem(val uri: Uri, val thumb: Bitmap?, val readable: Boolean)
+    /**
+     * 队列项使用本地文件路径，而不是相册的 content:// Uri。
+     * 相册 Uri 的读取授权只在当前进程有效，熄屏或进程被回收后就读不到，
+     * 表现为“选好的图和结果突然被删掉”。选图时立刻把缩放后的图落到本地文件。
+     */
+    data class QueueItem(val path: String, val name: String, val thumb: Bitmap?, val readable: Boolean)
 
     data class Failure(val title: String, val detail: String, val log: String)
 
@@ -70,22 +83,37 @@ object EditBatchController {
         val currentStartedAt: Long = 0L,
         val lastProgressAt: Long = 0L,
         val msPerStep: Long = 0L,
+        val calibrated: Boolean = false,
+        /** 剩余时间快照（毫秒），通知与界面共用，保证两处口径一致。 */
+        val etaMs: Long = 0L,
+        val engineLoadMs: Long = 0L,
+        val overheadMs: Long = 0L,
         val steps: Int = EditRoadPrefs.STEPS_DEFAULT,
         val canvasSize: Int = 384,
         val rendererLabel: String = "",
         val gpu: Boolean = false,
         val modelName: String = "",
+        val modelId: String = "",
         val results: List<HistoryItem> = emptyList(),
         val note: String? = null,
         val failure: Failure? = null,
+        /** 上次被系统打断的批任务：这里是还没跑的张数（0 = 没有可续跑的）。 */
+        val pendingResume: Int = 0,
     )
 
     private const val TAG = "EditBatch"
     private const val PREFS = "app_prefs"
     private const val KEY_MS_PER_STEP = "editroad_ms_per_step"
+    private const val KEY_CALIB = "editroad_step_calib_v2"
+    private const val KEY_OVERHEAD = "editroad_overhead_ms"
+
+    private const val QUEUE_DIR = "editroad/queue"
+    private const val JOB_FILE = "editroad/job.json"
 
     private const val MAX_IMAGES = 16
-    private const val MAX_EDGE = 1536
+
+    // 队列图存本机时的长边上限：足够覆盖最高档输出尺寸，又不会把私有目录撑爆。
+    private const val MAX_EDGE = 1024
     private const val THUMB_EDGE = 480
     private const val CFG = 7f
     private const val SCHEDULER = "dpm"
@@ -115,19 +143,51 @@ object EditBatchController {
     private var job: Job? = null
     private var appRef: Context? = null
 
+    /** 本批任务里引擎加载耗时（实测，用于预计时间）。 */
+    private var engineLoadSampleMs = 0L
+
     // ------------------------------------------------------------------ 配置
 
     fun refreshConfig(context: Context) {
         appRef = context.applicationContext
         val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        _state.update {
-            it.copy(
-                steps = EditRoadPrefs.steps(context),
+        _state.update { s ->
+            val modelId = s.modelId.ifBlank { EditRoadPrefs.lastModelId(context).orEmpty() }
+            val steps = EditRoadPrefs.steps(context)
+            val gpu = EditRoadPrefs.wantsGpu(context)
+            val canvas = DeviceCapabilities.sd15LongEdgeForRam(context)
+            val median = medianStepMs(context, modelId, gpu, canvas, steps)
+            s.copy(
+                modelId = modelId,
+                steps = steps,
                 rendererLabel = EditRoadPrefs.rendererLabel(context),
-                gpu = EditRoadPrefs.wantsGpu(context),
-                canvasSize = DeviceCapabilities.sd15LongEdgeForRam(context),
-                msPerStep = sp.getLong(KEY_MS_PER_STEP, 0L),
+                gpu = gpu,
+                canvasSize = canvas,
+                msPerStep = median.takeIf { it > 0 } ?: sp.getLong(KEY_MS_PER_STEP, 0L),
+                calibrated = median > 0,
+                overheadMs = sp.getLong(KEY_OVERHEAD, 0L),
             )
+        }
+    }
+
+    /** 进入修图页 / 打开应用时调用：恢复上次被系统打断的批任务，并清理遗留的临时图。 */
+    fun attach(context: Context) {
+        val app = context.applicationContext
+        refreshConfig(app)
+        restoreJob(app)
+        sweepQueueDir(app)
+    }
+
+    /** 删掉三天前留下、且不在当前队列里的临时图，避免私有目录越积越大。 */
+    private fun sweepQueueDir(app: Context) {
+        scope.launch(Dispatchers.IO) {
+            val keep = _state.value.queue.map { it.path }.toSet()
+            val cutoff = System.currentTimeMillis() - 3L * 24 * 3600 * 1000
+            runCatching {
+                queueDir(app).listFiles()?.forEach { f ->
+                    if (f.isFile && f.absolutePath !in keep && f.lastModified() < cutoff) f.delete()
+                }
+            }
         }
     }
 
@@ -145,29 +205,68 @@ object EditBatchController {
 
     // ------------------------------------------------------------------ 队列
 
+    private fun queueDir(context: Context): File =
+        File(context.filesDir, QUEUE_DIR).apply { runCatching { mkdirs() } }
+
+    private fun jobFile(context: Context): File = File(context.filesDir, JOB_FILE)
+
     fun pickImages(context: Context, uris: List<Uri>, append: Boolean) {
         val app = context.applicationContext
         appRef = app
-        val merged = (if (append) _state.value.queue.map { it.uri } + uris else uris).distinct()
-        if (merged.isEmpty()) return
-        val limited = merged.take(MAX_IMAGES)
-        val truncated = merged.size > limited.size
+        if (uris.isEmpty()) return
         _state.update { it.copy(loadingImages = true) }
         scope.launch {
-            val decoded = withContext(Dispatchers.IO) {
-                limited.map { uri ->
+            val dir = queueDir(app)
+            val stamp = System.currentTimeMillis()
+            val prevQueue = _state.value.queue
+            val fresh = withContext(Dispatchers.IO) {
+                uris.mapIndexed { index, uri ->
                     val full = decodeSampledBitmap(app, uri, MAX_EDGE)
-                    QueueItem(uri, full?.let { scaleToCanvas(it, THUMB_EDGE) }, full != null)
+                    if (full == null) {
+                        QueueItem("", "第 ${index + 1} 张", null, false)
+                    } else {
+                        val scaled = scaleToCanvas(full, MAX_EDGE)
+                        // 用 JPEG(92) 落盘：体积只有 PNG 的几分之一，修图输入画质足够。
+                        val file = File(dir, "q_${stamp}_$index.jpg")
+                        val ok = runCatching {
+                            FileOutputStream(file).use { out -> scaled.compress(Bitmap.CompressFormat.JPEG, 92, out) }
+                            file.length() > 0L
+                        }.getOrDefault(false)
+                        if (!ok) {
+                            runCatching { file.delete() }
+                            QueueItem("", uri.lastPathSegment ?: "第 ${index + 1} 张", null, false)
+                        } else {
+                            QueueItem(
+                                path = file.absolutePath,
+                                name = uri.lastPathSegment ?: file.name,
+                                thumb = scaleToCanvas(scaled, THUMB_EDGE),
+                                readable = true,
+                            )
+                        }
+                    }
                 }
             }
+            val unreadable = fresh.count { q -> !q.readable }
+            val merged = (if (append) prevQueue else emptyList()) + fresh
+            val kept = merged
+                .filter { q -> q.readable && q.path.isNotBlank() }
+                .distinctBy { it.path }
+                .take(MAX_IMAGES)
+            val dropped = merged.count { q -> q.readable && q.path.isNotBlank() } - kept.size
+            // 被换掉/挤掉的临时图立刻删掉，不留垃圾。
+            val keepPaths = kept.map { it.path }.toSet()
+            merged.filter { it.path.isNotBlank() && it.path !in keepPaths }
+                .forEach { q -> runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() } }
             _state.update {
                 it.copy(
-                    queue = decoded,
+                    queue = kept,
                     loadingImages = false,
                     note = when {
-                        truncated -> "一次最多 $MAX_IMAGES 张，只保留了前 $MAX_IMAGES 张"
-                        decoded.any { q -> !q.readable } ->
-                            "有 ${decoded.count { q -> !q.readable }} 张读不出来，修图时会自动跳过"
+                        unreadable > 0 && dropped > 0 ->
+                            "有 $unreadable 张没能加入（读不出或本机存储不足）；一次最多 $MAX_IMAGES 张"
+                        unreadable > 0 ->
+                            "有 $unreadable 张没能加入：相册授权失效、图片损坏或本机存储空间不足"
+                        dropped > 0 -> "一次最多 $MAX_IMAGES 张，多出的 $dropped 张没有加入"
                         else -> null
                     },
                 )
@@ -175,15 +274,30 @@ object EditBatchController {
         }
     }
 
-    fun removeImage(uri: Uri) {
+    fun removeImage(path: String) {
         if (_state.value.running) return
-        _state.update { it.copy(queue = it.queue.filterNot { q -> q.uri == uri }) }
+        _state.update { it.copy(queue = it.queue.filterNot { q -> q.path == path }) }
+        runCatching { File(path).takeIf { f -> f.isFile }?.delete() }
     }
 
     fun clearImages(context: Context) {
         if (_state.value.running) return
-        _state.update { it.copy(queue = emptyList(), results = emptyList(), note = null, preview = null) }
-        refreshConfig(context)
+        val app = context.applicationContext
+        _state.value.queue.forEach { q -> runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() } }
+        clearJob(app)
+        _state.update {
+            it.copy(
+                queue = emptyList(),
+                results = emptyList(),
+                note = null,
+                preview = null,
+                pendingResume = 0,
+                total = 0,
+                done = 0,
+                progress = 0f,
+            )
+        }
+        refreshConfig(app)
     }
 
     // ------------------------------------------------------------------ 执行
@@ -192,27 +306,75 @@ object EditBatchController {
         val app = context.applicationContext
         appRef = app
         if (_state.value.running) return
-        val items = _state.value.queue.filter { it.readable }.map { it.uri }
+        val items = _state.value.queue.filter { it.readable && it.path.isNotBlank() }
         if (items.isEmpty()) {
             _state.update { it.copy(note = "请先选择要修的图片（可多选）") }
             return
         }
         refreshConfig(app)
-        _state.update { it.copy(failure = null, note = null) }
-        job = scope.launch { runBatch(app, model, items, _state.value.prompt) }
+        val paths = items.map { it.path }
+        val promptText = _state.value.prompt
+        _state.update {
+            it.copy(
+                failure = null,
+                note = null,
+                queue = items,
+                pendingResume = 0,
+                modelId = model.id,
+                modelName = model.name,
+            )
+        }
+        BatteryOptimization.ensureIgnoring(app)
+        engineLoadSampleMs = 0L
+        persistJob(app, model, paths, 0, promptText, running = true)
+        job = scope.launch { runBatch(app, model, paths, promptText, 0) }
+    }
+
+    /** 上次被系统打断的队列已恢复，直接点“开始修图”就能接着跑完剩下的张。 */
+    fun resume(context: Context, model: Model) = start(context, model)
+
+    /** 用户主动放弃上次没跑完的那批：删掉临时图与清单，界面回到空队列。 */
+    fun discardResume(context: Context) {
+        val app = context.applicationContext
+        _state.value.queue.forEach { q -> runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() } }
+        clearJob(app)
+        _state.update {
+            it.copy(
+                queue = emptyList(),
+                pendingResume = 0,
+                total = 0,
+                done = 0,
+                progress = 0f,
+                note = null,
+            )
+        }
     }
 
     fun stop(context: Context) {
         val app = context.applicationContext
-        _state.update { it.copy(running = false, stage = "已停止") }
+        if (!_state.value.running) {
+            // 没在跑就不动队列，只把可能残留的保活服务与清单收掉。
+            EditKeepAliveService.finish(app, "NERT 空闲")
+            return
+        }
+        val rest = _state.value.queue.map { it.path }.drop(_state.value.done + 1)
+        _state.update { it.copy(running = false, stage = "已停止", pendingResume = rest.size) }
         runCatching { BackgroundGenerationService.stop(app) }
+        ModelHolder.current?.let { persistJob(app, it, rest, 0, _state.value.prompt, running = false) }
+        EditKeepAliveService.finish(app, "已停止，剩余 ${rest.size} 张可以继续")
         job?.let { current ->
             job = null
             scope.launch { runCatching { current.cancelAndJoin() } }
         }
     }
 
-    private suspend fun runBatch(app: Context, model: Model, items: List<Uri>, promptText: String) {
+    private suspend fun runBatch(
+        app: Context,
+        model: Model,
+        items: List<String>,
+        promptText: String,
+        startIndex: Int,
+    ) {
         val steps = EditRoadPrefs.steps(app)
         val useOpenCL = EditRoadPrefs.wantsGpu(app)
         val canvas = DeviceCapabilities.sd15LongEdgeForRam(app)
@@ -220,13 +382,17 @@ object EditBatchController {
         val history = HistoryManager(app)
         runCatching { LogCapture.start() }
 
-        Log.i(TAG, "batch start model=${model.id} type=${model.backendType} images=${items.size} steps=$steps gpu=$useOpenCL canvas=$canvas")
+        Log.i(
+            TAG,
+            "batch start model=${model.id} type=${model.backendType} images=${items.size} " +
+                "steps=$steps gpu=$useOpenCL canvas=$canvas from=$startIndex",
+        )
         _state.update {
             it.copy(
                 running = true,
                 failure = null,
                 total = items.size,
-                done = 0,
+                done = startIndex,
                 progress = 0f,
                 preview = null,
                 results = emptyList(),
@@ -237,15 +403,21 @@ object EditBatchController {
                 steps = steps,
                 gpu = useOpenCL,
                 canvasSize = canvas,
+                modelId = model.id,
                 modelName = model.name,
+                pendingResume = 0,
+                calibrated = medianStepMs(app, model.id, useOpenCL, canvas, steps) > 0,
             )
         }
+        ModelHolder.current = model
+        EditKeepAliveService.start(app, "正在准备引擎 · 共 ${items.size} 张", startIndex, items.size)
 
         var stopped = false
         var failed = false
         var finished = 0
+        var galleryFailures = 0
         try {
-            for ((index, uri) in items.withIndex()) {
+            for ((index, path) in items.withIndex()) {
                 if (!_state.value.running) {
                     stopped = true
                     break
@@ -259,9 +431,13 @@ object EditBatchController {
                     )
                 }
 
-                val decoded = withContext(Dispatchers.IO) { decodeSampledBitmap(app, uri, MAX_EDGE) }
+                val readStart = System.currentTimeMillis()
+                val decoded = withContext(Dispatchers.IO) { decodeLocalBitmap(path, MAX_EDGE) }
                 if (decoded == null) {
-                    _state.update { it.copy(done = it.done + 1, note = "第 ${index + 1} 张读取失败，已跳过") }
+                    val msg = "第 ${index + 1} 张的本地文件读不到（可能存储空间被清理），已跳过"
+                    _state.update { it.copy(done = it.done + 1, note = msg) }
+                    LogHub.log(LogHub.Category.GENERATE, "queue file missing: $path")
+                    persistJob(app, model, items.drop(index + 1), 0, promptText, _state.value.running)
                     continue
                 }
                 val scaled = scaleToCanvas(decoded, canvas)
@@ -290,11 +466,15 @@ object EditBatchController {
                     )
                 }.onFailure { Log.w(TAG, "original history save failed", it) }
 
+                val engineStart = System.currentTimeMillis()
                 val engineError = ensureEngineReady(app, model, scaled.width, scaled.height)
                 if (engineError != null) {
                     reportFailure(model, "模型引擎无法加载", engineError, "第 ${index + 1} 张")
                     failed = true
                     break
+                }
+                if (engineLoadSampleMs <= 0L) {
+                    engineLoadSampleMs = System.currentTimeMillis() - engineStart
                 }
                 if (!writeSourceImage(app, scaled)) {
                     reportFailure(
@@ -311,18 +491,11 @@ object EditBatchController {
                     is GenOutcome.Done -> {
                         val bitmap = outcome.bitmap
                         val elapsed = System.currentTimeMillis() - _state.value.currentStartedAt
-                        calibrate(elapsed, steps)
-                        _state.update { it.copy(stage = "第 ${index + 1} 张：保存到相册") }
-                        withContext(Dispatchers.IO) {
-                            runCatching {
-                                saveImage(
-                                    context = app,
-                                    bitmap = bitmap,
-                                    onSuccess = {},
-                                    onError = { Log.w(TAG, "gallery save failed: $it") },
-                                )
-                            }
-                        }
+                        calibrate(app, model.id, useOpenCL, canvas, steps, outcome.msPerStep)
+
+                        // 先落本机历史（不会被系统清理），再写相册：
+                        // 这样即使相册写入被拒或后台被杀，图也一定还在“历史”里。
+                        _state.update { it.copy(stage = "第 ${index + 1} 张：写入历史") }
                         val item = withContext(Dispatchers.IO) {
                             runCatching {
                                 history.saveGeneratedImage(
@@ -347,12 +520,51 @@ object EditBatchController {
                                 )
                             }.getOrNull()
                         }
+                        val historyOk = item != null && item.imageFile.exists()
                         if (item != null) {
                             _state.update { it.copy(results = (it.results + item).takeLast(8)) }
                         }
+
+                        _state.update { it.copy(stage = "第 ${index + 1} 张：保存到相册") }
+                        var galleryError: String? = null
+                        withContext(Dispatchers.IO) {
+                            runCatching {
+                                saveImage(
+                                    context = app,
+                                    bitmap = bitmap,
+                                    onSuccess = {},
+                                    onError = { galleryError = it },
+                                )
+                            }.onFailure { galleryError = it.message ?: it.javaClass.simpleName }
+                        }
+                        if (galleryError != null) galleryFailures += 1
+                        if (!historyOk || galleryError != null) {
+                            val why = when {
+                                !historyOk && galleryError != null ->
+                                    "历史与相册都没写入成功：${galleryError}"
+                                !historyOk -> "历史写入失败（相册已写入）"
+                                else -> "相册写入失败：${galleryError}（历史里仍可看到这张）"
+                            }
+                            LogHub.log(LogHub.Category.GENERATE, "save issue: $why")
+                            _state.update { it.copy(note = why) }
+                        }
+
+                        // 附加耗时 = 本张总耗时 - 纯步进耗时（读取、翻译、写历史与相册都算进来）
+                        val totalThis = System.currentTimeMillis() - _state.value.currentStartedAt
+                        recordOverhead(app, (totalThis - outcome.stepSpanMs).coerceIn(0L, 120_000L))
                         finished += 1
                         _state.update { it.copy(done = it.done + 1, progress = 0f, preview = null) }
                         BackgroundGenerationService.clearCompleteState()
+                        // 这张已经完成：把队列文件删掉，避免占存储；清单同步剩余张数。
+                        runCatching { File(path).takeIf { f -> f.isFile }?.delete() }
+                        val rest = items.drop(index + 1)
+                        persistJob(app, model, rest, 0, promptText, running = rest.isNotEmpty())
+                        EditKeepAliveService.update(
+                            app,
+                            "已完成 ${index + 1}/${items.size} 张",
+                            index + 1,
+                            items.size,
+                        )
                         delay(600)
                     }
 
@@ -377,6 +589,8 @@ object EditBatchController {
             failed = true
         } finally {
             runCatching { LogCapture.stopAndPublish() }
+            val remaining = items.size - _state.value.done
+            val doneNow = _state.value.done
             _state.update {
                 it.copy(
                     running = false,
@@ -386,16 +600,131 @@ object EditBatchController {
                         stopped -> "已停止"
                         else -> "全部完成：$finished 张"
                     },
+                    pendingResume = if ((stopped || failed) && remaining > 0) remaining else 0,
                     note = when {
                         failed -> it.note
-                        stopped -> "已停止修图，已完成的部分仍在相册与历史里"
+                        stopped && remaining > 0 ->
+                            "已停止修图；已完成的图片仍在相册与历史里，剩余 $remaining 点上方“继续修完”接着跑"
+                        galleryFailures > 0 ->
+                            "$finished 张已修好并保存在“历史”，其中 $galleryFailures 张写相册失败（多为相册权限或空间不足）"
                         finished > 0 -> "$finished 张已自动保存到相册，可在“历史”里回看"
                         else -> it.note
                     },
                 )
             }
+            if (!stopped && !failed) {
+                // 整批跑完：清理队列文件与清单。
+                items.forEach { p -> runCatching { File(p).takeIf { f -> f.isFile }?.delete() } }
+                clearJob(app)
+                _state.update { it.copy(queue = emptyList(), pendingResume = 0) }
+            } else {
+                val rest = items.drop(doneNow)
+                persistJob(app, model, rest, 0, promptText, running = false)
+                // 队列只留没跑完的那些：中途完成的图片文件已删，
+                // 若继续留在队列里，重启后再点开始会把它们当成待修图片重复计数。
+                _state.update {
+                    it.copy(
+                        queue = it.queue.filter { q -> q.path in rest },
+                        pendingResume = rest.size,
+                        total = rest.size,
+                        done = 0,
+                        progress = 0f,
+                    )
+                }
+            }
+            EditKeepAliveService.finish(
+                app,
+                when {
+                    failed -> "修图未完成，点开应用查看日志"
+                    stopped -> "已停止，剩余 ${maxOf(0, remaining)} 张可继续"
+                    else -> "修图完成：$finished 张已存入相册与历史"
+                },
+            )
             io.github.xororz.localdream.data.EditRoadPrefs.setLastModelId(app, model.id)
         }
+    }
+
+    // ------------------------------------------------------------------ 断点清单
+
+    private object ModelHolder {
+        @Volatile
+        var current: Model? = null
+    }
+
+    private fun persistJob(
+        app: Context,
+        model: Model,
+        remaining: List<String>,
+        done: Int,
+        prompt: String,
+        running: Boolean,
+    ) {
+        runCatching {
+            val obj = JSONObject()
+                .put("modelId", model.id)
+                .put("prompt", prompt)
+                .put("done", done)
+                .put("running", running)
+                .put("updatedAt", System.currentTimeMillis())
+                .put(
+                    "queue",
+                    JSONArray().apply { remaining.filter { it.isNotBlank() }.forEach { put(it) } },
+                )
+            val file = jobFile(app)
+            file.parentFile?.mkdirs()
+            FileOutputStream(file).use { it.write(obj.toString().toByteArray()) }
+        }.onFailure { Log.w(TAG, "persist job failed", it) }
+    }
+
+    private fun clearJob(app: Context) {
+        runCatching { jobFile(app).takeIf { f -> f.isFile }?.delete() }
+    }
+
+    /**
+     * 进程被系统回收后重新启动时恢复：把还没修完的队列文件读回来，
+     * running 为 true 说明上次是被打断的（正常跑完会清掉清单）。
+     */
+    private fun restoreJob(app: Context) {
+        val s = _state.value
+        if (s.running || s.queue.isNotEmpty()) return
+        val file = jobFile(app)
+        if (!file.isFile) return
+        val parsed = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return
+        val modelId = parsed.optString("modelId")
+        val paths = parsed.optJSONArray("queue")?.let { arr ->
+            (0 until arr.length()).map { arr.optString(it) }
+        }.orEmpty().filter { it.isNotBlank() }
+        val running = parsed.optBoolean("running", false)
+        val prompt = parsed.optString("prompt")
+        val existing = paths.filter { p -> File(p).isFile && p.startsWith(queueDir(app).absolutePath) }
+        if (existing.isEmpty()) {
+            clearJob(app)
+            if (running) {
+                _state.update { it.copy(note = "上次没跑完的图片文件已经不在了，请重新选择图片") }
+            }
+            return
+        }
+        val queue = existing.map { p ->
+            val bmp = runCatching { decodeLocalBitmap(p, THUMB_EDGE) }.getOrNull()
+            QueueItem(p, File(p).name, bmp, true)
+        }
+        val model = io.github.xororz.localdream.data.ModelRepository.getInstance(app)
+            .models.firstOrNull { it.id == modelId }
+        _state.update {
+            it.copy(
+                queue = queue,
+                prompt = prompt.ifBlank { it.prompt },
+                pendingResume = if (running) queue.size else 0,
+                modelId = modelId,
+                modelName = model?.name.orEmpty(),
+                note = if (running && model != null) {
+                    "上次修图在后台被系统打断，这里恢复了没跑完的 ${queue.size} 张，点“开始修图”接着跑完"
+                } else {
+                    it.note
+                },
+            )
+        }
+        Log.i(TAG, "restored job model=$modelId pending=${queue.size} running=$running")
     }
 
     // ------------------------------------------------------------------ 引擎
@@ -493,7 +822,17 @@ object EditBatchController {
     }.getOrDefault(false)
 
     private sealed class GenOutcome {
-        data class Done(val bitmap: Bitmap, val seed: Long?) : GenOutcome()
+        /**
+         * @param msPerStep 本张实测的单步耗时（0 = 样本不足，不参与标定）
+         * @param stepSpanMs 本张纯步进总耗时，用来反推“每张附加耗时”
+         */
+        data class Done(
+            val bitmap: Bitmap,
+            val seed: Long?,
+            val msPerStep: Long,
+            val stepSpanMs: Long,
+        ) : GenOutcome()
+
         data class Failed(val title: String, val detail: String) : GenOutcome()
         object Cancelled : GenOutcome()
     }
@@ -552,26 +891,40 @@ object EditBatchController {
 
         val startedAt = System.currentTimeMillis()
         var sawStep = false
+        var firstStepAt = 0L
+        var lastStepAt = 0L
+        var lastStepProgress = 0f
         while (true) {
             if (!_state.value.running) return GenOutcome.Cancelled
 
             when (val gs = BackgroundGenerationService.generationState.value) {
                 is BackgroundGenerationService.GenerationState.Progress -> {
                     if (gs.progress > 0.001f) {
-                        sawStep = true
+                        val now = System.currentTimeMillis()
+                        if (!sawStep) {
+                            sawStep = true
+                            firstStepAt = now
+                        }
+                        if (gs.progress > lastStepProgress + 0.005f) {
+                            lastStepAt = now
+                            lastStepProgress = gs.progress
+                        }
                         _state.update {
                             it.copy(
                                 progress = gs.progress.coerceIn(0f, 1f),
                                 preview = gs.intermediateImage ?: it.preview,
-                                lastProgressAt = System.currentTimeMillis(),
+                                lastProgressAt = now,
                             )
                         }
+                        updateEta(app, model, now)
                     }
                 }
 
                 is BackgroundGenerationService.GenerationState.Complete -> {
                     BackgroundGenerationService.markBitmapConsumed()
-                    return GenOutcome.Done(gs.bitmap, gs.seed)
+                    val measured = measureStepMs(sawStep, firstStepAt, lastStepAt, lastStepProgress, steps)
+                    val span = if (sawStep && lastStepAt > firstStepAt) lastStepAt - firstStepAt else 0L
+                    return GenOutcome.Done(gs.bitmap, gs.seed, measured, span)
                 }
 
                 is BackgroundGenerationService.GenerationState.Error -> {
@@ -599,6 +952,36 @@ object EditBatchController {
             }
             delay(200)
         }
+    }
+
+    /** 只用步进时间差算单步耗时，跳过首步（含排队）与最后一步（含解码/回传）。 */
+    private fun measureStepMs(
+        sawStep: Boolean,
+        firstStepAt: Long,
+        lastStepAt: Long,
+        lastProgress: Float,
+        steps: Int,
+    ): Long {
+        if (!sawStep || firstStepAt <= 0L || lastStepAt <= firstStepAt || steps <= 2) return 0L
+        val span = lastStepAt - firstStepAt
+        val covered = (((lastProgress.coerceIn(0.05f, 0.98f) - (1f / steps)) * steps).toDouble())
+            .coerceAtLeast(1.0)
+        return (span / covered).toLong().coerceIn(60L, 30_000L)
+    }
+
+    private fun updateEta(app: Context, model: Model, now: Long) {
+        val s = _state.value
+        val eta = remainingMs(app, model.id, s, now)
+        if (eta != s.etaMs) _state.update { it.copy(etaMs = eta) }
+    }
+
+    /** 界面每秒调一次：让“预计剩余”随时间跳动，不必等引擎的步进回调。 */
+    fun tickEta() {
+        val app = appRef ?: return
+        val s = _state.value
+        if (!s.running) return
+        val eta = remainingMs(app, s.modelId, s, System.currentTimeMillis())
+        if (eta != s.etaMs) _state.update { it.copy(etaMs = eta) }
     }
 
     private fun reportFailure(model: Model, title: String, detail: String, where: String) {
@@ -641,6 +1024,11 @@ object EditBatchController {
         sb.appendLine("模型：${model.name} · id=${model.id} · type=${model.backendType} · ${model.approximateSize}")
         sb.appendLine("参数：${s.steps}步 CFG=$CFG ${if (s.gpu) "GPU" else "CPU"} 长边=${s.canvasSize} 渲染器=${s.rendererLabel}")
         sb.appendLine("线程：手动=${sp.getInt("cpu_threads", 0)}（0=自动） img2img=${sp.getBoolean("use_img2img", true)}")
+        sb.appendLine(
+            "标定：${if (s.calibrated || s.msPerStep > 0) "已实测（${s.msPerStep}ms/步）" else "未实测"}" +
+                " · 单张附加 ${s.overheadMs}ms · 引擎加载 ${engineLoadSampleMs}ms",
+        )
+        sb.appendLine("后台保活：${if (Build.VERSION.SDK_INT >= 23) "前台服务已启用" else "n/a"}")
         sb.appendLine("后端状态：${describeBackend()}")
         sb.appendLine("生成状态：${describeGeneration()}")
         sb.appendLine("引擎端口：${EnginePort.activeEnginePort(ctx)} · 连通=${if (portOpen(ctx)) "yes" else "no"}")
@@ -709,42 +1097,103 @@ object EditBatchController {
 
     // ------------------------------------------------------------------ 预计时间
 
-    private fun calibrate(elapsedMs: Long, steps: Int) {
-        if (steps <= 0 || elapsedMs <= 0) return
-        val ctx = appRef ?: return
-        val perStep = (elapsedMs / steps).coerceIn(80L, 6000L)
-        val sp = ctx.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-        val prev = sp.getLong(KEY_MS_PER_STEP, 0L)
-        val merged = if (prev <= 0L) perStep else (prev * 3 + perStep) / 4
-        sp.edit().putLong(KEY_MS_PER_STEP, merged).apply()
-        _state.update { it.copy(msPerStep = merged) }
+    private fun calibKey(modelId: String, gpu: Boolean, canvas: Int, steps: Int): String =
+        "$modelId|${if (gpu) "gpu" else "cpu"}|$canvas|$steps"
+
+    /** 取同一档位最近 5 个样本的中位数，抗单次抖动（后台被限频、发热降频等）。 */
+    private fun medianStepMs(context: Context, modelId: String, gpu: Boolean, canvas: Int, steps: Int): Long {
+        if (modelId.isBlank()) return 0L
+        val sp = context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val raw = sp.getString(KEY_CALIB, null) ?: return 0L
+        val arr = runCatching { JSONObject(raw).optJSONArray(calibKey(modelId, gpu, canvas, steps)) }.getOrNull()
+            ?: return 0L
+        if (arr.length() == 0) return 0L
+        val list = (0 until arr.length()).map { arr.getLong(it) }.sorted()
+        return list[list.size / 2]
     }
 
-    fun perImageEstimateMs(): Long {
-        val s = _state.value
-        val perStep = s.msPerStep.takeIf { it > 0 } ?: if (s.gpu) 420L else 1300L
-        return perStep.coerceIn(150L, 6000L) * s.steps + 12_000L
+    private fun calibrate(app: Context, modelId: String, gpu: Boolean, canvas: Int, steps: Int, measured: Long) {
+        val per = measured.takeIf { it > 0 } ?: return
+        val sp = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val key = calibKey(modelId, gpu, canvas, steps)
+        val root = runCatching { JSONObject(sp.getString(KEY_CALIB, "{}") ?: "{}") }.getOrElse { JSONObject() }
+        val arr = runCatching { root.optJSONArray(key) }.getOrNull() ?: JSONArray()
+        val samples = ((0 until arr.length()).map { arr.getLong(it) } + per).takeLast(5)
+        root.put(key, JSONArray(samples))
+        sp.edit().putString(KEY_CALIB, root.toString()).putLong(KEY_MS_PER_STEP, per).apply()
+        _state.update { it.copy(msPerStep = samples.sorted()[samples.size / 2], calibrated = true) }
+        Log.i(TAG, "calibrated $key -> samples=$samples")
     }
 
-    /** 基于真实步进进度动态收敛的剩余时间，多张时同时给出总剩余。 */
+    private fun recordOverhead(app: Context, ms: Long) {
+        if (ms <= 0L) return
+        val sp = app.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        val prev = sp.getLong(KEY_OVERHEAD, 0L)
+        val merged = if (prev <= 0L) ms else (prev * 3 + ms) / 4
+        sp.edit().putLong(KEY_OVERHEAD, merged).apply()
+        _state.update { it.copy(overheadMs = merged) }
+    }
+
+    /** 当前档位“每张”应有的耗时（不含引擎加载）。 */
+    private fun stepMs(app: Context, modelId: String, s: State): Long {
+        val median = medianStepMs(app, modelId, s.gpu, s.canvasSize, s.steps)
+        if (median > 0) return median
+        if (s.msPerStep > 0) return s.msPerStep
+        return if (s.gpu) 420L else 1300L
+    }
+
+    private fun perImageModelMs(app: Context, modelId: String, s: State): Long =
+        stepMs(app, modelId, s) * s.steps + maxOf(s.overheadMs, 2_000L)
+
+    /**
+     * 剩余时间：先用“实测进度外推”，再用分档标定模型补齐整批；
+     * 引擎还没加载过的那一张额外加引擎加载耗时。
+     */
+    private fun remainingMs(app: Context, modelId: String, s: State, now: Long): Long {
+        if (!s.running || s.total <= 0) return 0L
+        val perImage = perImageModelMs(app, modelId, s)
+        val elapsed = (now - s.currentStartedAt).coerceAtLeast(0L)
+        val p = s.progress
+        val modelThisRemaining = (perImage - elapsed).coerceAtLeast(0L)
+        val thisRemaining = if (p > 0.08f && elapsed > 4_000L) {
+            val extrapolated = ((elapsed.toDouble() / p) * (1.0 - p)).toLong().coerceIn(0L, perImage * 3)
+            val w = (p * 1.6).coerceAtMost(0.85)
+            (extrapolated * w + modelThisRemaining * (1.0 - w)).toLong()
+        } else {
+            modelThisRemaining
+        }
+        val restImages = (s.total - s.done - 1).coerceAtLeast(0)
+        val load = if (engineLoadSampleMs <= 0L &&
+            BackendService.servingModelId.value != modelId
+        ) {
+            if (s.gpu) 18_000L else 12_000L
+        } else {
+            0L
+        }
+        return thisRemaining + perImage * restImages + load
+    }
+
+    /** 界面与通知都用它，保证两处口径一致。 */
     fun etaText(): String {
+        val app = appRef ?: return ""
         val s = _state.value
         if (!s.running) return ""
-        val now = System.currentTimeMillis()
-        val elapsed = (now - s.currentStartedAt).coerceAtLeast(0L)
-        val perImage = perImageEstimateMs()
-        val thisRemaining = if (s.progress > 0.02f) {
-            ((elapsed.toDouble() / s.progress) * (1.0 - s.progress)).toLong()
-        } else {
-            (perImage - elapsed).coerceAtLeast(0L)
-        }
-        val rest = (s.total - s.done - 1).coerceAtLeast(0)
-        val allRemaining = thisRemaining + perImage * rest
+        val remaining = remainingMs(app, s.modelId, s, System.currentTimeMillis())
+        val elapsed = (System.currentTimeMillis() - s.startedAt).coerceAtLeast(0L)
+        val tail = if (s.calibrated) "已按本机实测" else "首次运行会先校准"
         return if (s.total > 1) {
-            "本张约剩 ${humanSeconds(thisRemaining)} · 全部约剩 ${humanSeconds(allRemaining)}"
+            "本批约剩 ${humanSeconds(remaining)} · 已用 ${humanSeconds(elapsed)}（$tail）"
         } else {
-            "预计剩余约 ${humanSeconds(thisRemaining)}"
+            "预计剩余约 ${humanSeconds(remaining)} · 已用 ${humanSeconds(elapsed)}（$tail）"
         }
+    }
+
+    /** 每张刷新一次，界面用它展示“预计每张”。 */
+    fun perImageEstimateMs(): Long {
+        val app = appRef ?: return 0L
+        val s = _state.value
+        val modelId = s.modelId.ifBlank { EditRoadPrefs.lastModelId(app).orEmpty() }
+        return perImageModelMs(app, modelId, s)
     }
 
     fun overallProgress(): Float {
@@ -752,6 +1201,11 @@ object EditBatchController {
         if (s.total <= 0) return 0f
         return ((s.done + s.progress).coerceAtMost(s.total.toFloat()) / s.total.toFloat())
     }
+
+    /** 上次被打断、还没跑的张数（0 = 没有）。 */
+    fun pendingResumeCount(): Int = _state.value.pendingResume
+
+    fun isCalibrated(): Boolean = _state.value.calibrated
 }
 
 internal fun decodeSampledBitmap(context: Context, uri: Uri, maxEdge: Int): Bitmap? = runCatching {
@@ -764,6 +1218,20 @@ internal fun decodeSampledBitmap(context: Context, uri: Uri, maxEdge: Int): Bitm
     }
     val opts = BitmapFactory.Options().apply { inSampleSize = sample }
     context.contentResolver.openInputStream(uri)?.use { BitmapFactory.decodeStream(it, null, opts) }
+}.getOrNull()
+
+internal fun decodeLocalBitmap(path: String, maxEdge: Int): Bitmap? = runCatching {
+    val file = File(path)
+    if (!file.isFile) return@runCatching null
+    val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
+    BitmapFactory.decodeFile(path, bounds)
+    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return@runCatching null
+    var sample = 1
+    while (bounds.outWidth / sample > maxEdge || bounds.outHeight / sample > maxEdge) {
+        sample *= 2
+    }
+    val opts = BitmapFactory.Options().apply { inSampleSize = sample }
+    BitmapFactory.decodeFile(path, opts)
 }.getOrNull()
 
 internal fun humanSeconds(ms: Long): String {

@@ -1,5 +1,6 @@
 package io.github.xororz.localdream.ui.screens
 
+import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.clickable
@@ -73,6 +74,8 @@ fun EditRoadHomeScreen(
     val scope = rememberCoroutineScope()
     val repository = remember { ModelRepository.getInstance(context) }
     LaunchedEffect(Unit) { repository.ensureLoaded() }
+    // 打开应用就恢复上次被系统打断的修图任务（队列/进度都在本机文件里）
+    LaunchedEffect(Unit) { EditBatchController.attach(context) }
 
     val models = repository.models
     val downloadModels = remember(models) {
@@ -84,6 +87,8 @@ fun EditRoadHomeScreen(
     val downloadState by ModelDownloadService.downloadState.collectAsState()
     val convertState by ConvertManager.state.collectAsState()
     var confirmDownload by remember { mutableStateOf<Model?>(null) }
+    // 正在下载时再点同一个模型：给出“停止 / 继续等待”，不再重复弹“是否开始下载”
+    var cancelDownloadFor by remember { mutableStateOf<Model?>(null) }
     var showLocalImport by remember { mutableStateOf(false) }
     var showUrlImport by remember { mutableStateOf(false) }
 
@@ -259,11 +264,9 @@ fun EditRoadHomeScreen(
                     onDownload = {
                         when {
                             model.isDownloaded -> onOpenModel(model)
-                            busyModelId == model.id -> Toast.makeText(
-                                context,
-                                "这个模型正在下载，请等它完成",
-                                Toast.LENGTH_SHORT,
-                            ).show()
+                            // 正在下载的这个模型再点一次：给出“停止 / 继续等待”，
+                            // 而不是重复弹“是否开始下载”的确认框。
+                            busyModelId == model.id -> cancelDownloadFor = model
                             else -> confirmDownload = model
                         }
                     },
@@ -312,6 +315,44 @@ fun EditRoadHomeScreen(
             },
             dismissButton = {
                 TextButton(onClick = { confirmDownload = null }) { Text("取消") }
+            },
+        )
+    }
+
+    cancelDownloadFor?.let { model ->
+        val pct = when (val d = downloadState) {
+            is ModelDownloadService.DownloadState.Downloading -> (d.progress * 100).toInt().coerceIn(0, 100)
+            else -> 0
+        }
+        AlertDialog(
+            onDismissRequest = { cancelDownloadFor = null },
+            title = { Text("「${model.name}」正在下载") },
+            text = {
+                Column {
+                    Text("当前进度 $pct%。继续等待会保留这次下载；停止后可以马上换别的模型下载。")
+                    Spacer(Modifier.height(6.dp))
+                    Text(
+                        "下载源：${EditRoadPrefs.downloadSourceLabel(context)}（可在设置里切换）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    cancelDownloadFor = null
+                    runCatching {
+                        context.startService(
+                            Intent(context, ModelDownloadService::class.java).apply {
+                                action = ModelDownloadService.ACTION_CANCEL_DOWNLOAD
+                            },
+                        )
+                    }
+                    Toast.makeText(context, "已停止下载「${model.name}」", Toast.LENGTH_SHORT).show()
+                }) { Text("停止下载") }
+            },
+            dismissButton = {
+                TextButton(onClick = { cancelDownloadFor = null }) { Text("继续等待") }
             },
         )
     }

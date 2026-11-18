@@ -99,9 +99,12 @@ fun CpuPressureScreen(active: Boolean, bottomPadding: Dp = 104.dp) {
 
     val failureTitle = batch.failure?.title
     val generationText = when {
-        batch.running -> "修图中 ${(batch.progress * 100).toInt()}%（${(batch.done + 1).coerceAtMost(batch.total)}/${batch.total} 张）"
+        batch.running -> "修图中 ${(batch.progress * 100).toInt()}%（${(batch.done + 1).coerceAtMost(batch.total)}/${batch.total} 张）" +
+            EditBatchController.etaText().takeIf { it.isNotBlank() }?.let { " · $it" }.orEmpty()
+
         failureTitle != null -> "上次失败：$failureTitle"
         batch.results.isNotEmpty() -> "空闲（上次完成 ${batch.results.size} 张）"
+        batch.pendingResume > 0 -> "上次有 ${batch.pendingResume} 张没跑完，可在修改页接着跑"
         else -> "当前空闲"
     }
 

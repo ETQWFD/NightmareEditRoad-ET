@@ -102,8 +102,8 @@
     <h2>这一版做了什么</h2>
     <p class="lead">从「能跑的修图器」变成「日常能用的修图器」：引擎不再假死，出错不再静默。</p>
     <div class="grid">
-      <div class="card"><span class="tag">引擎</span><h3>修图不再卡在 0%</h3>
-        <p>批量任务移出界面生命周期，独立控制器执行。切到历史 / 设置，甚至退回模型页，生成都不会中断，回来仍是原进度。</p></div>
+      <div class="card"><span class="tag">引擎</span><h3>修图不中断、不丢图</h3>
+        <p>批量任务移出界面生命周期，由独立控制器执行，并有修图保活前台服务。切到历史 / 设置不会中断，熄屏与切后台同样继续跑；图片在选定时就复制进应用私有目录，即使进程被系统收回，重新打开也能“继续修完（N 张）”。</p></div>
       <div class="card"><span class="tag">启动</span><h3>修 <code>rememberCoroutineScope left the composition</code></h3>
         <p>旧实现把循环挂在 Compose 作用域上，一离开页面就被取消并抛异常；现在由控制器持有作用域，异常路径全部收敛为可读日志。</p></div>
       <div class="card"><span class="tag">诊断</span><h3>失败必弹日志窗</h3>

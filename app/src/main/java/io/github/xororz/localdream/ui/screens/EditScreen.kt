@@ -104,8 +104,18 @@ fun EditScreen(
     var showLog by remember { mutableStateOf(false) }
 
     val running = s.running
-    LaunchedEffect(Unit) { EditBatchController.refreshConfig(context) }
-    LaunchedEffect(active) { if (active) EditBatchController.refreshConfig(context) }
+    // attach：读配置 + 恢复上次被系统打断的批任务（熄屏/杀进程后队列与进度还在）
+    LaunchedEffect(Unit) { EditBatchController.attach(context) }
+    LaunchedEffect(active) { if (active) EditBatchController.attach(context) }
+
+    // 预计时间需要每秒跳动一次：引擎只在步进时回调，这里补一个低频刷新，
+    // 免得进度条不动时“预计剩余”也停在旧值。
+    LaunchedEffect(running) {
+        while (running) {
+            kotlinx.coroutines.delay(1000)
+            EditBatchController.tickEta()
+        }
+    }
 
     DisposableEffect(active, running) {
         rootView.keepScreenOn = active || running
@@ -136,11 +146,11 @@ fun EditScreen(
         }
     }
 
-    LaunchedEffect(s.note) {
-        if (s.note != null) {
-            kotlinx.coroutines.delay(6000)
-            EditBatchController.clearNote()
-        }
+    LaunchedEffect(s.note, running) {
+        val note = s.note ?: return@LaunchedEffect
+        if (running) return@LaunchedEffect
+        kotlinx.coroutines.delay(15000)
+        if (EditBatchController.state.value.note == note) EditBatchController.clearNote()
     }
 
     Scaffold(
@@ -261,13 +271,13 @@ fun EditScreen(
             // ---------- 队列 ----------
             if (s.queue.isNotEmpty()) {
                 Text(
-                    "已选 ${s.queue.size} 张 · 按顺序逐张修图" +
-                        if (s.queue.any { !it.readable }) "（${s.queue.count { !it.readable }} 张读不出，会跳过）" else "",
+                    "已选 ${s.queue.size} 张 · 按顺序逐张修图（图片已存到本机，熄屏或被系统回收也不会丢）" +
+                        if (s.pendingResume > 0) " · 其中 ${s.pendingResume} 张是上次没跑完的" else "",
                     style = MaterialTheme.typography.labelMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp), contentPadding = PaddingValues(vertical = 2.dp)) {
-                    items(s.queue, key = { it.uri.toString() }) { item ->
+                    items(s.queue, key = { it.path }) { item ->
                         Box(modifier = Modifier.size(84.dp).clip(RoundedCornerShape(10.dp))) {
                             if (item.thumb != null) {
                                 Image(
@@ -290,7 +300,7 @@ fun EditScreen(
                                     modifier = Modifier.align(Alignment.TopEnd),
                                 ) {
                                     IconButton(
-                                        onClick = { EditBatchController.removeImage(item.uri) },
+                                        onClick = { EditBatchController.removeImage(item.path) },
                                         modifier = Modifier.size(22.dp),
                                     ) {
                                         Icon(
@@ -345,6 +355,30 @@ fun EditScreen(
                 }
             }
 
+            // ---------- 断点续跑 ----------
+            if (!running && s.pendingResume > 0 && s.queue.isNotEmpty()) {
+                Surface(
+                    color = MaterialTheme.colorScheme.tertiaryContainer.copy(alpha = 0.5f),
+                    shape = RoundedCornerShape(12.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    Column(Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(
+                            "上次有 ${s.pendingResume} 张没跑完（进程被系统收回了），图片和队列都还在本机。",
+                            style = MaterialTheme.typography.labelMedium,
+                        )
+                        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Button(onClick = { EditBatchController.start(context, model) }) {
+                                Text("继续修完（${s.queue.size} 张）")
+                            }
+                            TextButton(onClick = { EditBatchController.discardResume(context) }) {
+                                Text("放弃这批")
+                            }
+                        }
+                    }
+                }
+            }
+
             // ---------- 主按钮 ----------
             Button(
                 onClick = { EditBatchController.start(context, model) },
@@ -396,7 +430,8 @@ fun EditScreen(
                 }
                 TextButton(onClick = { EditBatchController.stop(context) }) { Text("停止本次修图") }
                 Text(
-                    "可以切到“历史 / 设置”，修图不会中断，回来仍是原来的进度。",
+                    "可以切到「模型 / 历史 / 设置」，修图不会中断；熄屏或切到后台也会继续跑" +
+                        "（进度与图片已存到本机，被系统回收后重新打开能接着跑完）。",
                     style = MaterialTheme.typography.labelSmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )

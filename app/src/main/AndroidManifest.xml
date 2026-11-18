@@ -82,6 +82,17 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!-- 404: 批量修图期间的前台保活，避免熄屏/后台被系统回收导致队列与结果消失。 -->
+        <service
+            android:name=".service.EditKeepAliveService"
+            android:enabled="true"
+            android:exported="false"
+            android:foregroundServiceType="specialUse">
+            <property
+                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                android:value="On-device AI image generation/model conversion" />
+        </service>
+
         <!-- et.24: foreground service carrying the in-app APK update download. -->
         <service
             android:name=".service.UpdateDownloadService"
