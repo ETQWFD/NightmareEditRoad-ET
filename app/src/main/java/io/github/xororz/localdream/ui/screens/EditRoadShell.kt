@@ -5,6 +5,13 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsPressedAsState
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.lerp
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -274,26 +281,51 @@ private fun DockTab(
     modifier: Modifier = Modifier,
     onClick: () -> Unit,
 ) {
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
+    // 选中时轻微放大 + 底色渐入，按下时回弹一下：这就是“灵动”的来源，纯 Compose 动画，低配也不掉帧。
+    val selectedAnim by animateFloatAsState(
+        targetValue = if (selected) 1f else 0f,
+        animationSpec = spring(dampingRatio = 0.55f, stiffness = 420f),
+        label = "dockSelect",
+    )
+    val pressScale by animateFloatAsState(
+        targetValue = if (pressed) 0.90f else 1f,
+        animationSpec = spring(dampingRatio = 0.4f, stiffness = 520f),
+        label = "dockPress",
+    )
     Box(
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(horizontal = 2.dp),
+        modifier = modifier.padding(horizontal = 2.dp),
         contentAlignment = Alignment.Center,
     ) {
         Column(
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier
+                .graphicsLayer {
+                    val s = (1f + 0.05f * selectedAnim) * pressScale
+                    scaleX = s
+                    scaleY = s
+                }
+                .clip(RoundedCornerShape(18.dp))
                 .background(
-                    if (selected) MaterialTheme.colorScheme.primaryContainer else Color(0x00FFFFFF),
-                    RoundedCornerShape(18.dp),
+                    lerp(
+                        Color(0x00FFFFFF),
+                        MaterialTheme.colorScheme.primaryContainer,
+                        selectedAnim,
+                    ),
                 )
+                .clickable(interactionSource = interaction, indication = null, onClick = onClick)
                 .padding(horizontal = 8.dp, vertical = 5.dp),
         ) {
             Icon(
                 icon,
                 contentDescription = null,
-                modifier = Modifier.size(19.dp),
-                tint = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.size((19 + 2 * selectedAnim).dp),
+                tint = lerp(
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    MaterialTheme.colorScheme.primary,
+                    selectedAnim,
+                ),
             )
             Spacer(Modifier.height(2.dp))
             Text(
@@ -301,7 +333,11 @@ private fun DockTab(
                 fontSize = 11.sp,
                 maxLines = 1,
                 fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
-                color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = lerp(
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+                    MaterialTheme.colorScheme.primary,
+                    selectedAnim,
+                ),
             )
         }
     }

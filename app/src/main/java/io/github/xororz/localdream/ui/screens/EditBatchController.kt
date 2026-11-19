@@ -130,8 +130,9 @@ object EditBatchController {
 
     private const val MAX_IMAGES = 16
 
-    // 队列图存本机时的长边上限：足够覆盖最高档输出尺寸，又不会把私有目录撑爆。
-    private const val MAX_EDGE = 1024
+    // 队列图存本机时的长边上限：跟随画质档位（1K–4K），并受机型内存约束。
+    // 以前一律压到 1024，用户抱怨“上传的图很模糊”，根因就是这里。
+    private const val HARD_MAX_EDGE = 4096
     private const val THUMB_EDGE = 480
     private const val CFG = 7f
     private const val SCHEDULER = "dpm"
@@ -184,7 +185,7 @@ object EditBatchController {
             val modelId = s.modelId.ifBlank { EditRoadPrefs.lastModelId(context).orEmpty() }
             val steps = EditRoadPrefs.steps(context)
             val gpu = EditRoadPrefs.wantsGpu(context)
-            val canvas = DeviceCapabilities.sd15LongEdgeForRam(context)
+            val canvas = engineCanvasEdge(context)
             val median = medianStepMs(context, modelId, gpu, canvas, steps)
             s.copy(
                 modelId = modelId,
@@ -241,6 +242,56 @@ object EditBatchController {
     private fun queueDir(context: Context): File =
         File(context.filesDir, QUEUE_DIR).apply { runCatching { mkdirs() } }
 
+    /**
+     * 提示语里是否包含“要改动内容”的意图。含则自动用最高强度，
+     * 避免“写了换场景却几乎没变”的老问题。
+     */
+    private fun wantsSemanticEdit(prompt: String): Boolean {
+        if (prompt.isBlank()) return false
+        val zh = listOf(
+            "换成", "改成", "改为", "变成", "变成", "换上", "穿上", "戴上", "去掉", "删掉",
+            "添加", "加上", "背景", "场景", "服装", "头发", "表情", "姿势", "动作", "环境",
+            "替换", "换一", "变成", "换个",
+        )
+        val en = listOf(
+            "change", "replace", "background", "scene", "outfit", "clothes", "wearing",
+            "without", "add ", "remove", "turn into", "make it", "instead of",
+        )
+        val lower = prompt.lowercase()
+        return zh.any { prompt.contains(it) } || en.any { lower.contains(it) }
+    }
+
+    /** 上传图落盘的长边：跟随画质档位，最高 4096，受内存/位数约束。 */
+    private fun sourceMaxEdge(context: Context): Int {
+        val tier = EditRoadPrefs.qualityEdge(EditRoadPrefs.quality(context))
+        val ramGb = DeviceCapabilities.totalRamBytes(context) / (1024L * 1024L * 1024L)
+        val cap = when {
+            DeviceCapabilities.extremeLowRam(context) -> 2048
+            !DeviceCapabilities.is64Bit() -> 2048
+            ramGb >= 8L -> HARD_MAX_EDGE
+            else -> 3072
+        }
+        return minOf(HARD_MAX_EDGE, maxOf(1536, tier), cap)
+    }
+
+    /**
+     * 引擎实际扩散长边。SD1.5 超过 ~1024 会明显失真/爆内存，
+     * 所以在机型允许的上限内给到 1024（低配仍按 256/384 保稳定）。
+     * 高画质档位的“更多细节”来自更大的输入与成片放大，而不是硬怼 4K 扩散。
+     */
+    private fun engineCanvasEdge(context: Context): Int {
+        if (DeviceCapabilities.extremeLowRam(context)) return 256
+        if (!DeviceCapabilities.is64Bit()) return 384
+        val base = DeviceCapabilities.sd15LongEdgeForRam(context)
+        val tier = EditRoadPrefs.quality(context)
+        val want = when (tier) {
+            EditRoadPrefs.QUALITY_4K, EditRoadPrefs.QUALITY_3K -> 1024
+            EditRoadPrefs.QUALITY_2K -> 896
+            else -> 768
+        }
+        return minOf(1024, maxOf(base, want))
+    }
+
     private fun maskDir(context: Context): File =
         File(context.filesDir, MASK_DIR).apply { runCatching { mkdirs() } }
 
@@ -257,11 +308,11 @@ object EditBatchController {
             val prevQueue = _state.value.queue
             val fresh = withContext(Dispatchers.IO) {
                 uris.mapIndexed { index, uri ->
-                    val full = decodeSampledBitmap(app, uri, MAX_EDGE)
+                    val full = decodeSampledBitmap(app, uri, sourceMaxEdge(app))
                     if (full == null) {
                         QueueItem("", "第 ${index + 1} 张", null, false)
                     } else {
-                        val scaled = scaleToCanvas(full, MAX_EDGE)
+                        val scaled = scaleToCanvas(full, sourceMaxEdge(app))
                         // 用 JPEG(92) 落盘：体积只有 PNG 的几分之一，修图输入画质足够。
                         val file = File(dir, "q_${stamp}_$index.jpg")
                         val ok = runCatching {
@@ -640,8 +691,21 @@ object EditBatchController {
         val steps = EditRoadPrefs.steps(app)
         val useOpenCL = EditRoadPrefs.wantsGpu(app)
         val canvas = DeviceCapabilities.sd15LongEdgeForRam(app)
-        // 强度：留空只做画质增强（低强度）；写了提示语就用设置里的强度（默认 0.55，能真的改得动）。
-        val denoise = if (promptText.isBlank()) DENOISE_BLANK else EditRoadPrefs.strength(app)
+        // 强度：留空只做画质增强（低强度）；写了提示语就用设置里的强度。
+        // 但用户明确说“换成/改成/背景/服装/去掉/加上”时，这类语义改动在 0.55 下几乎看不出来，
+        // 直接抬到 0.70（= 引擎允许的上限），并在界面里说明为什么。
+        val semanticEdit = wantsSemanticEdit(promptText)
+        val userStrength = EditRoadPrefs.strength(app)
+        var denoise = if (promptText.isBlank()) DENOISE_BLANK else userStrength
+        if (promptText.isNotBlank() && semanticEdit && denoise < EditRoadPrefs.STRENGTH_MAX) {
+            denoise = EditRoadPrefs.STRENGTH_MAX
+            _state.update {
+                it.copy(
+                    note = "检测到“换场景/换服装/去掉/加上”这类改动要求，本批重绘强度已自动用 " +
+                        "${(EditRoadPrefs.STRENGTH_MAX * 100).toInt()}%（想更保守可在设置里调低）",
+                )
+            }
+        }
         val userNegative = EditRoadPrefs.negativePrompt(app)
         val history = HistoryManager(app)
         runCatching { LogCapture.start() }
@@ -701,7 +765,7 @@ object EditBatchController {
                 }
 
                 val readStart = System.currentTimeMillis()
-                val decoded = withContext(Dispatchers.IO) { decodeLocalBitmap(path, MAX_EDGE) }
+                val decoded = withContext(Dispatchers.IO) { decodeLocalBitmap(path, sourceMaxEdge(app)) }
                 if (decoded == null) {
                     val msg = "第 ${index + 1} 张的本地文件读不到（可能存储空间被清理），已跳过"
                     _state.update { it.copy(done = it.done + 1, note = msg) }

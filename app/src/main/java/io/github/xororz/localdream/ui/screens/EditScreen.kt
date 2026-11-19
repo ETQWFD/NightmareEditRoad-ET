@@ -48,6 +48,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -476,8 +484,19 @@ fun EditScreen(
             }
 
             if (running) {
+                // 总进度与单张进度都做缓动，避免每次回调都“跳一下”。
+                val animatedOverall by animateFloatAsState(
+                    targetValue = EditBatchController.overallProgress(),
+                    animationSpec = tween(durationMillis = 420, easing = FastOutSlowInEasing),
+                    label = "overallProgress",
+                )
+                val animatedThis by animateFloatAsState(
+                    targetValue = s.progress,
+                    animationSpec = tween(durationMillis = 380, easing = FastOutSlowInEasing),
+                    label = "thisProgress",
+                )
                 LinearProgressIndicator(
-                    progress = { EditBatchController.overallProgress() },
+                    progress = { animatedOverall },
                     modifier = Modifier.fillMaxWidth().height(8.dp),
                 )
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
@@ -488,7 +507,7 @@ fun EditScreen(
                             modifier = Modifier.weight(1f),
                         )
                         Text(
-                            "本张 ${(s.progress * 100).toInt()}%",
+                            "本张 ${(animatedThis * 100).toInt()}%",
                             style = MaterialTheme.typography.bodySmall,
                             fontWeight = FontWeight.Bold,
                         )
@@ -516,13 +535,21 @@ fun EditScreen(
                 )
             }
 
-            s.note?.let {
+            AnimatedVisibility(
+                visible = s.note != null,
+                enter = fadeIn(tween(220)) + expandVertically(tween(260)),
+                exit = fadeOut(tween(180)) + shrinkVertically(tween(220)),
+            ) {
                 Surface(
                     color = MaterialTheme.colorScheme.secondaryContainer.copy(alpha = 0.7f),
                     shape = RoundedCornerShape(10.dp),
                     modifier = Modifier.fillMaxWidth(),
                 ) {
-                    Text(it, style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(10.dp))
+                    Text(
+                        s.note.orEmpty(),
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier.padding(10.dp),
+                    )
                 }
             }
 

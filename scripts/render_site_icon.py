@@ -9,22 +9,30 @@ import os
 
 from PIL import Image, ImageDraw
 
-INK = (10, 16, 23, 255)
+INK = (11, 16, 23, 255)
 ACCENT = (47, 109, 246, 255)
 WHITE = (255, 255, 255, 255)
 DISC = (251, 253, 255, 255)
-STROKE = 86
-BOX = (170, 380, 830, 640)  # letters bounding box, including stroke caps
+STROKE = 38
+BOX = (224, 428, 800, 596)  # 407 重排后的字母包围盒
 
 # (x1, y1, x2, y2) straight strokes, in the 1024 viewport.
 STROKES = [
-    (212, 600, 212, 424), (212, 424, 300, 600), (300, 600, 300, 424),          # N
-    (368, 424, 368, 600), (368, 424, 456, 424), (368, 512, 446, 512), (368, 600, 456, 600),  # E
-    (520, 600, 520, 424), (520, 424, 578, 424), (520, 512, 578, 512), (552, 512, 604, 600),  # R
-    (656, 424, 784, 424), (720, 424, 720, 600),                                # T
+    (224, 596, 224, 428),
+    (224, 428, 320, 596),
+    (320, 596, 320, 428),
+    (384, 428, 384, 596),
+    (384, 428, 480, 428),
+    (384, 512, 462, 512),
+    (384, 596, 480, 596),
+    (544, 428, 544, 596),
+    (544, 428, 640, 428),
+    (634, 512, 648, 596),
+    (704, 428, 800, 428),
+    (752, 428, 752, 596),
 ]
-R_BOWL = (549, 468, 29, -90, 90)   # cx, cy, r, a0, a1
-SPARK = (612, 556, 25)              # cx, cy, r
+R_BOWL = (598, 470, 42, -90, 90)   # cx, cy, r, a0, a1
+SPARK = (832, 564, 11)              # cx, cy, r
 
 
 def render(size: int, path: str, transparent: bool = False, margin_scale: float = 1.0) -> None:
@@ -34,7 +42,7 @@ def render(size: int, path: str, transparent: bool = False, margin_scale: float 
         d.ellipse([0, 0, size - 1, size - 1], fill=DISC)
 
     bw, bh = BOX[2] - BOX[0], BOX[3] - BOX[1]
-    pad = size * 0.14
+    pad = size * 0.12
     k = min((size - 2 * pad) / bw, (size - 2 * pad) / bh) * margin_scale
     ox = (size - bw * k) / 2.0 - BOX[0] * k
     oy = (size - bh * k) / 2.0 - BOX[1] * k

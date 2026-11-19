@@ -208,11 +208,12 @@ object EditRoadPrefs {
     }
 
     /** 0 = 自动（按大核数）。用户可在 CPU 压力页手动指定线程数。 */
+    /** 0 = 自动（按大核数）。手动可选 1–16 线程（407 起上限固定 16，不再接受负值）。 */
     fun cpuThreads(context: Context): Int =
-        prefs(context).getInt(KEY_CPU_THREADS, 0).coerceIn(0, 32)
+        prefs(context).getInt(KEY_CPU_THREADS, 0).coerceIn(0, 16)
 
     fun setCpuThreads(context: Context, value: Int) {
-        prefs(context).edit().putInt(KEY_CPU_THREADS, value.coerceIn(0, 32)).apply()
+        prefs(context).edit().putInt(KEY_CPU_THREADS, value.coerceIn(0, 16)).apply()
     }
 
     fun lastModelId(context: Context): String? =

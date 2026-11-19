@@ -194,12 +194,13 @@ fun CpuPressureScreen(active: Boolean, bottomPadding: Dp = 104.dp) {
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                         modifier = Modifier.horizontalScroll(rememberScrollState()),
                     ) {
+                        // 407：线程上限固定 16，不再出现负数或超出核心数的取值。
                         val choices = buildList {
                             add(0 to "自动($bigCores)")
                             addAll(
-                                listOf(2, 4, 6, 8, bigCores, allCores)
+                                listOf(2, 4, 6, 8, 12, 16, bigCores, allCores)
+                                    .filter { it in 1..minOf(16, allCores) }
                                     .distinct()
-                                    .filter { it in 1..allCores && it != bigCores }
                                     .sorted()
                                     .map { it to "$it 线程" },
                             )
@@ -354,7 +355,7 @@ private fun readTemperature(): Float {
 
 private suspend fun runCpuBenchmark(threads: Int, millis: Long): Long = coroutineScope {
     val end = System.nanoTime() + millis * 1_000_000L
-    (1..threads.coerceIn(1, 32)).map { seed ->
+    (1..threads.coerceIn(1, 16)).map { seed ->
         async(Dispatchers.Default) {
             var x = seed.toLong() * 2654435761L + 1
             var ops = 0L
