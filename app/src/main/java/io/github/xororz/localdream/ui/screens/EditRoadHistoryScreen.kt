@@ -1,6 +1,10 @@
 package io.github.xororz.localdream.ui.screens
 
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.PaddingValues
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,7 +54,8 @@ import java.util.Date
 import java.util.Locale
 
 /**
- * 本地历史：上传过的原图 + 修好的结果都在这里，可点开看大图、可再存一次相册。
+ * 本地历史：只放“修好的结果”。上传的原图不会出现在这里（407 起已从写入端去掉，
+ * 旧数据在读取时过滤掉）。每张卡片都能直接「保存到相册」或「删除」。
  * 完全离线，没有云端上传/登录入口。
  */
 @Composable
@@ -58,9 +63,11 @@ fun EditRoadHistoryScreen(bottomPadding: Dp = 104.dp) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     val manager = remember { HistoryManager(context) }
-    val items by remember {
+    val raw by remember {
         manager.observeRecent(HistoryFilter(), 800)
     }.collectAsState(initial = emptyList())
+    // 历史里绝不出现原图：写入端已不再写，这里再把老数据里 prompt = "上传原图" 的滤掉。
+    val items = remember(raw) { raw.filterNot { it.params.prompt.startsWith("上传原图") } }
 
     var preview by remember { mutableStateOf<HistoryItem?>(null) }
     var deleteTarget by remember { mutableStateOf<HistoryItem?>(null) }
@@ -94,7 +101,7 @@ fun EditRoadHistoryScreen(bottomPadding: Dp = 104.dp) {
             }
         } else {
             LazyVerticalGrid(
-                columns = GridCells.Fixed(3),
+                columns = GridCells.Fixed(2),
                 modifier = Modifier.fillMaxSize().padding(padding).padding(horizontal = 8.dp),
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp),
@@ -104,8 +111,8 @@ fun EditRoadHistoryScreen(bottomPadding: Dp = 104.dp) {
                     Box(
                         modifier = Modifier
                             .fillMaxWidth()
-                            .height(150.dp)
-                            .clip(RoundedCornerShape(10.dp))
+                            .height(220.dp)
+                            .clip(RoundedCornerShape(12.dp))
                             .clickable { preview = item },
                     ) {
                         AsyncImage(
@@ -114,17 +121,43 @@ fun EditRoadHistoryScreen(bottomPadding: Dp = 104.dp) {
                             modifier = Modifier.fillMaxSize(),
                             contentScale = ContentScale.Crop,
                         )
-                        Surface(
-                            color = Color(0xB3000000),
-                            shape = RoundedCornerShape(topStart = 8.dp),
-                            modifier = Modifier.align(Alignment.BottomStart),
+                        // 底部操作条：保存 / 删除，不用点开大图也能处理。
+                        Row(
+                            modifier = Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .background(Color(0xCC000000))
+                                .padding(horizontal = 6.dp, vertical = 4.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
                         ) {
-                            Text(
-                                if (item.params.prompt.startsWith("上传原图")) "原图" else "修图",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = Color.White,
-                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-                            )
+                            TextButton(
+                                onClick = {
+                                    scope.launch {
+                                        withContext(Dispatchers.IO) {
+                                            saveImageFromFile(
+                                                context,
+                                                item.imageFile,
+                                                onSuccess = {
+                                                    android.widget.Toast.makeText(context, "已保存到相册", android.widget.Toast.LENGTH_SHORT).show()
+                                                },
+                                                onError = { msg ->
+                                                    android.widget.Toast.makeText(context, msg, android.widget.Toast.LENGTH_LONG).show()
+                                                },
+                                            )
+                                        }
+                                    }
+                                },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) {
+                                Text("保存", color = Color.White, style = MaterialTheme.typography.labelSmall)
+                            }
+                            TextButton(
+                                onClick = { deleteTarget = item },
+                                contentPadding = PaddingValues(horizontal = 6.dp, vertical = 0.dp),
+                            ) {
+                                Text("删除", color = Color(0xFFFF8A80), style = MaterialTheme.typography.labelSmall)
+                            }
                         }
                     }
                 }
@@ -135,7 +168,7 @@ fun EditRoadHistoryScreen(bottomPadding: Dp = 104.dp) {
     preview?.let { item ->
         AlertDialog(
             onDismissRequest = { preview = null },
-            title = { Text(if (item.params.prompt.startsWith("上传原图")) "上传原图" else "修图结果") },
+            title = { Text("修图结果") },
             text = {
                 Column {
                     AsyncImage(

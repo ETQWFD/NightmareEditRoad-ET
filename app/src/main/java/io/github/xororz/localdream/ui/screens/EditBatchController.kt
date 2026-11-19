@@ -133,7 +133,7 @@ object EditBatchController {
     // 队列图存本机时的长边上限：跟随画质档位（1K–4K），并受机型内存约束。
     // 以前一律压到 1024，用户抱怨“上传的图很模糊”，根因就是这里。
     private const val HARD_MAX_EDGE = 4096
-    private const val THUMB_EDGE = 480
+    private const val THUMB_EDGE = 768
     private const val CFG = 7f
     private const val SCHEDULER = "dpm"
 
@@ -326,7 +326,7 @@ object EditBatchController {
                             QueueItem(
                                 path = file.absolutePath,
                                 name = uri.lastPathSegment ?: file.name,
-                                thumb = scaleToCanvas(scaled, THUMB_EDGE),
+                                thumb = scaleToCanvas(scaled, THUMB_EDGE),  // 768 长边，列表与预览都不糊
                                 readable = true,
                             )
                         }
@@ -690,11 +690,14 @@ object EditBatchController {
     ) {
         val steps = EditRoadPrefs.steps(app)
         val useOpenCL = EditRoadPrefs.wantsGpu(app)
-        val canvas = DeviceCapabilities.sd15LongEdgeForRam(app)
+        val canvas = engineCanvasEdge(app)
         // 强度：留空只做画质增强（低强度）；写了提示语就用设置里的强度。
         // 但用户明确说“换成/改成/背景/服装/去掉/加上”时，这类语义改动在 0.55 下几乎看不出来，
         // 直接抬到 0.70（= 引擎允许的上限），并在界面里说明为什么。
-        val semanticEdit = wantsSemanticEdit(promptText)
+        val normalized = promptText
+            .replace("\r", " ").replace("\n", " ")
+            .replace(Regex("\\s+"), " ").trim().take(600)
+        val semanticEdit = wantsSemanticEdit(normalized)
         val userStrength = EditRoadPrefs.strength(app)
         var denoise = if (promptText.isBlank()) DENOISE_BLANK else userStrength
         if (promptText.isNotBlank() && semanticEdit && denoise < EditRoadPrefs.STRENGTH_MAX) {
@@ -775,29 +778,8 @@ object EditBatchController {
                 }
                 val scaled = scaleToCanvas(decoded, canvas)
 
-                // 原图先入历史，用户在“历史”页就能看到自己上传过什么。
-                runCatching {
-                    history.saveGeneratedImage(
-                        modelId = model.id,
-                        bitmap = scaled,
-                        params = GenerationParameters(
-                            steps = steps,
-                            cfg = CFG,
-                            seed = null,
-                            prompt = "上传原图",
-                            negativePrompt = "",
-                            generationTime = null,
-                            width = scaled.width,
-                            height = scaled.height,
-                            runOnCpu = !useOpenCL,
-                            denoiseStrength = 0f,
-                            useOpenCL = useOpenCL,
-                            scheduler = SCHEDULER,
-                            mode = GenerationMode.EDIT,
-                        ),
-                        mode = GenerationMode.EDIT,
-                    )
-                }.onFailure { Log.w(TAG, "original history save failed", it) }
+                // 407：原图不再写入历史。历史里只应该有“修图结果”，
+                // 之前把原图也塞进去，用户一进历史看到一堆原图，分不清哪张是修好的。
 
                 val engineStart = System.currentTimeMillis()
                 val engineError = ensureEngineReady(app, model, scaled.width, scaled.height)
@@ -855,7 +837,7 @@ object EditBatchController {
                                         steps = steps,
                                         cfg = CFG,
                                         seed = outcome.seed,
-                                        prompt = promptText.ifBlank { DEFAULT_POSITIVE },
+                                        prompt = normalized.ifBlank { DEFAULT_POSITIVE },
                                         negativePrompt = buildNegative(userNegative),
                                         generationTime = "${elapsed / 1000}s",
                                         width = bitmap.width,
@@ -1225,7 +1207,15 @@ object EditBatchController {
     ): GenOutcome {
         BackgroundGenerationService.resetState()
 
-        val positive = promptText.ifBlank { DEFAULT_POSITIVE }.trim()
+        // 英文长句（如 “The girl in a pink dress stands under cherry blossoms…”）不做词典替换：
+        // CLIP 本身能读句子，这里只清掉换行与多余空格并限长 600 字符，避免被引擎截断。
+        val positive = promptText
+            .replace("\r", " ")
+            .replace("\n", " ")
+            .replace(Regex("\\s+"), " ")
+            .trim()
+            .take(600)
+            .ifBlank { DEFAULT_POSITIVE }
         // 中文提示语：能联网翻译就先转英文标签；翻译失败就交给服务里的离线词典，
         // 绝不因为翻译接口挂掉而让整个修图失败。
         val translated = if (ChinesePrompt.hasChinese(positive)) {

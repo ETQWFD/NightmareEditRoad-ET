@@ -77,6 +77,9 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.produceState
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -243,7 +246,7 @@ fun EditScreen(
             val preview: Bitmap? = s.preview
             val last = s.results.lastOrNull()
             when {
-                preview != null -> PreviewBox(title = "实时预览 · ${(s.progress * 100).toInt()}%") {
+                preview != null -> PreviewBox(title = "实时预览（低清）· ${(s.progress * 100).toInt()}%") {
                     Image(
                         bitmap = preview.asImageBitmap(),
                         contentDescription = "修图实时预览",
@@ -261,15 +264,27 @@ fun EditScreen(
                     )
                 }
 
-                s.queue.firstOrNull { it.readable }?.thumb != null ->
-                    PreviewBox(title = if (s.queue.size > 1) "待修 ${s.queue.size} 张 · 第 1 张" else "待修图片") {
-                        Image(
-                            bitmap = s.queue.first { it.readable }.thumb!!.asImageBitmap(),
-                            contentDescription = "待修图片",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                        )
+                s.queue.firstOrNull { it.readable }?.path != null -> {
+                    // 待修大图按 1440 长边重新解码：之前直接用 480 缩略图铺满屏幕，
+                    // 用户看到的第一眼就是“我上传的图怎么这么糊”。
+                    val firstPath = s.queue.first { it.readable }.path
+                    val hi by produceState<android.graphics.Bitmap?>(initialValue = null, firstPath) {
+                        value = withContext(Dispatchers.IO) {
+                            decodeLocalBitmap(firstPath, 1440)
+                        }
                     }
+                    val shown = hi ?: s.queue.first { it.readable }.thumb
+                    if (shown != null) {
+                        PreviewBox(title = if (s.queue.size > 1) "待修 ${s.queue.size} 张 · 第 1 张（${shown.width}×${shown.height}）" else "待修图片（${shown.width}×${shown.height}）") {
+                            Image(
+                                bitmap = shown.asImageBitmap(),
+                                contentDescription = "待修图片",
+                                modifier = Modifier.fillMaxSize(),
+                                contentScale = ContentScale.Fit,
+                            )
+                        }
+                    }
+                }
 
                 else -> Box(
                     modifier = Modifier

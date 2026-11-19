@@ -5,6 +5,8 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.foundation.interaction.MutableInteractionSource
@@ -226,10 +228,20 @@ private fun EmptyEditState(onPick: () -> Unit) {
 
 @Composable
 private fun KeepAliveLayer(visible: Boolean, content: @Composable () -> Unit) {
+    // 四页切换：淡入淡出 + 极轻微上浮，代替原本“瞬间跳页”。
+    val anim by animateFloatAsState(
+        targetValue = if (visible) 1f else 0f,
+        animationSpec = tween(durationMillis = 260, easing = FastOutSlowInEasing),
+        label = "layerFade",
+    )
     Box(
         Modifier
             .fillMaxSize()
-            .alpha(if (visible) 1f else 0f)
+            .graphicsLayer {
+                alpha = anim
+                scaleX = 0.985f + 0.015f * anim
+                scaleY = 0.985f + 0.015f * anim
+            }
             .zIndex(if (visible) 1f else 0f)
             .then(if (visible) Modifier else Modifier.clearAndSetSemantics {}),
     ) {
