@@ -101,6 +101,9 @@ object EditBatchController {
         val strength: Float = EditRoadPrefs.STRENGTH_DEFAULT,
         val negativePrompt: String = EditRoadPrefs.DEFAULT_NEGATIVE,
         val canvasSize: Int = 384,
+        /** 成片长边（1K/2K/3K/4K 档位，可能被机型上限降档）。 */
+        val outputEdge: Int = 1024,
+        val qualityLabel: String = "1K",
         val rendererLabel: String = "",
         val gpu: Boolean = false,
         val modelName: String = "",
@@ -191,6 +194,8 @@ object EditBatchController {
                 rendererLabel = EditRoadPrefs.rendererLabel(context),
                 gpu = gpu,
                 canvasSize = canvas,
+                outputEdge = EditRoadPrefs.outputEdge(context),
+                qualityLabel = EditRoadPrefs.qualityLabel(context),
                 msPerStep = median.takeIf { it > 0 } ?: sp.getLong(KEY_MS_PER_STEP, 0L),
                 calibrated = median > 0,
                 overheadMs = sp.getLong(KEY_OVERHEAD, 0L),
@@ -406,6 +411,98 @@ object EditBatchController {
         return runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
     }
 
+    /**
+     * 放大到成片长边。原生扩散尺寸由机型决定，这里用带过滤的缩放补到用户选的 1K–4K，
+     * 再叠一层轻度锐化，避免“4K 看着还是糊的”。
+     */
+    private fun upscaleTo(src: Bitmap, targetEdge: Int): Bitmap {
+        val longEdge = maxOf(src.width, src.height)
+        if (targetEdge <= longEdge) return src
+        val scale = targetEdge.toFloat() / longEdge
+        val w = (((src.width * scale).toInt()).coerceAtLeast(8) / 8) * 8
+        val h = (((src.height * scale).toInt()).coerceAtLeast(8) / 8) * 8
+        val dst = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(dst)
+        val paint = android.graphics.Paint().apply {
+            isFilterBitmap = true
+            isAntiAlias = true
+            isDither = true
+        }
+        // 分两步放大，比一次性 4 倍插值清楚一些。
+        var tmp: Bitmap = src
+        var curW = src.width
+        var curH = src.height
+        while (curW * 2 < w) {
+            curW *= 2
+            curH *= 2
+            val step = Bitmap.createScaledBitmap(tmp, curW, curH, true)
+            if (tmp !== src) runCatching { tmp.recycle() }
+            tmp = step
+        }
+        canvas.drawBitmap(tmp, null, android.graphics.Rect(0, 0, w, h), paint)
+        if (tmp !== src) runCatching { tmp.recycle() }
+        return dst
+    }
+
+    /**
+     * 蒙版是否被引擎忽略：只在“蒙版为黑（不该改）”的采样点上比对源图与结果，
+     * 平均差异过大就说明整图被重画了。
+     */
+    private fun maskedAreaChanged(source: Bitmap, result: Bitmap, maskPath: String): Boolean {
+        val mask = decodeMaskBitmap(maskPath) ?: return false
+        // 统一缩到长边 256 再采样：4K 成片下直接对齐会再分配两张 64MB 位图，
+        // 在低配机上反而会把刚生成的图挤爆。
+        val probeEdge = 256
+        fun probe(src: Bitmap?): Bitmap? {
+            if (src == null) return null
+            val longEdge = maxOf(src.width, src.height)
+            if (longEdge <= probeEdge) return src
+            val s = probeEdge.toFloat() / longEdge
+            val w = (src.width * s).toInt().coerceAtLeast(8)
+            val h = (src.height * s).toInt().coerceAtLeast(8)
+            return Bitmap.createScaledBitmap(src, w, h, true)
+        }
+        val scaledMask = probe(mask) ?: return false
+        val src = probe(source) ?: return false
+        val resultProbe = probe(result) ?: return false
+        if (scaledMask.width != src.width || scaledMask.height != src.height) {
+            // 宽高比一致时会落到同一尺寸；万一不一致就放弃校验，宁可误报“没校验”也不要误伤。
+            runCatching { if (scaledMask !== mask) scaledMask.recycle() }
+            runCatching { if (src !== source) src.recycle() }
+            runCatching { if (resultProbe !== result) resultProbe.recycle() }
+            return false
+        }
+        var diffSum = 0.0
+        var count = 0
+        val stepX = (src.width / 64).coerceAtLeast(1)
+        val stepY = (src.height / 64).coerceAtLeast(1)
+        var y = 0
+        while (y < src.height) {
+            var x = 0
+            while (x < src.width) {
+                val m = scaledMask.getPixel(x, y)
+                val maskLuma = (android.graphics.Color.red(m) + android.graphics.Color.green(m) + android.graphics.Color.blue(m)) / 3
+                // 只比对蒙版里为黑的位置（用户没圈的区域）
+                if (maskLuma < 40) {
+                    val a = src.getPixel(x, y)
+                    val b = resultProbe.getPixel(x, y)
+                    diffSum += kotlin.math.abs(android.graphics.Color.red(a) - android.graphics.Color.red(b)) +
+                        kotlin.math.abs(android.graphics.Color.green(a) - android.graphics.Color.green(b)) +
+                        kotlin.math.abs(android.graphics.Color.blue(a) - android.graphics.Color.blue(b))
+                    count++
+                }
+                x += stepX
+            }
+            y += stepY
+        }
+        runCatching { if (scaledMask !== mask) scaledMask.recycle() }
+        runCatching { if (src !== source) src.recycle() }
+        runCatching { if (resultProbe !== result) resultProbe.recycle() }
+        if (count == 0) return false
+        val mean = diffSum / (count * 3.0)
+        return mean > 45.0
+    }
+
     /** 供画笔使用：把队列图按当前输出尺寸缩放后返回（蒙版必须与它同尺寸）。 */
     fun canvasBitmapForMask(context: Context, path: String): Bitmap? {
         val canvas = _state.value.canvasSize
@@ -572,6 +669,8 @@ object EditBatchController {
                 steps = steps,
                 gpu = useOpenCL,
                 canvasSize = canvas,
+                outputEdge = EditRoadPrefs.outputEdge(app),
+                qualityLabel = EditRoadPrefs.qualityLabel(app),
                 modelId = model.id,
                 modelName = model.name,
                 pendingResume = 0,
@@ -663,9 +762,22 @@ object EditBatchController {
                     userNegative = userNegative,
                 )) {
                     is GenOutcome.Done -> {
-                        val bitmap = outcome.bitmap
+                        val raw = outcome.bitmap
                         val elapsed = System.currentTimeMillis() - _state.value.currentStartedAt
                         calibrate(app, model.id, useOpenCL, canvas, steps, outcome.msPerStep)
+
+                        // 画质档位：引擎按机型原生尺寸生成，这里再放大到用户选的成片分辨率。
+                        // 手机上不可能原生跑 4K 扩散，如实放大比装成“原生 4K”更靠得住。
+                        val targetEdge = _state.value.outputEdge
+                        val upscaling = maxOf(raw.width, raw.height) < targetEdge
+                        if (upscaling) _state.update { it.copy(stage = "第 ${index + 1} 张：放大到 ${targetEdge}px") }
+                        val bitmap = if (upscaling) upscaleTo(raw, targetEdge) else raw
+                        if (upscaling && bitmap !== raw) runCatching { raw.recycle() }
+
+                        // 引擎若忽略蒙版，会在选区外大幅改动 —— 直接告诉用户，别让人以为画笔失效了。
+                        val maskIgnored = queueItem.maskPath.isNotBlank() && maskedAreaChanged(
+                            source = scaled, result = bitmap, maskPath = queueItem.maskPath,
+                        )
 
                         // 先落本机历史（不会被系统清理），再写相册：
                         // 这样即使相册写入被拒或后台被杀，图也一定还在“历史”里。
@@ -710,6 +822,14 @@ object EditBatchController {
                                     onError = { galleryError = it },
                                 )
                             }.onFailure { galleryError = it.message ?: it.javaClass.simpleName }
+                        }
+                        if (maskIgnored) {
+                            _state.update {
+                                it.copy(
+                                    note = "本机引擎没有按选区只改圈出区域（该模型可能不支持蒙版），这张是整图重绘：把重绘强度调到 30% 左右更稳",
+                                )
+                            }
+                            LogHub.log(LogHub.Category.GENERATE, "mask ignored by engine (item=${index + 1})")
                         }
                         if (galleryError != null) galleryFailures += 1
                         if (!historyOk || galleryError != null) {

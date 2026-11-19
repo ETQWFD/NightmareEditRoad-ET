@@ -34,6 +34,7 @@ import androidx.compose.material.icons.filled.Groups
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.Memory
 import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.Star
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -87,6 +88,10 @@ fun EditRoadSettingsScreen(
     var strength by remember { mutableFloatStateOf(EditRoadPrefs.strength(context)) }
     var negative by remember { mutableStateOf(EditRoadPrefs.negativePrompt(context)) }
     var autocomplete by remember { mutableStateOf(EditRoadPrefs.autocompleteEnabled(context)) }
+    var quality by remember { mutableStateOf(EditRoadPrefs.quality(context)) }
+    val nativeEdge = remember {
+        io.github.xororz.localdream.utils.DeviceCapabilities.sd15LongEdgeForRam(context)
+    }
     val extremeLowEnd = remember {
         io.github.xororz.localdream.utils.DeviceCapabilities.extremeLowRam(context)
     }
@@ -249,6 +254,52 @@ fun EditRoadSettingsScreen(
                             }
                         }
                     }
+                }
+            }
+
+            item {
+                SettingsCard(Icons.Default.Star, "画质（输出分辨率）") {
+                    Text(
+                        "引擎按机型原生尺寸（本机约 ${nativeEdge}px）生成，再放大到你选的成片分辨率。" +
+                            "手机上不可能原生跑 4K 扩散，4K 属于放大输出；要细节就用高清模型或多跑几遍。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(
+                            EditRoadPrefs.QUALITY_1K to "1K",
+                            EditRoadPrefs.QUALITY_2K to "2K",
+                            EditRoadPrefs.QUALITY_3K to "3K",
+                            EditRoadPrefs.QUALITY_4K to "4K",
+                        ).forEach { (key, label) ->
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = if (quality == key) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                },
+                                modifier = Modifier.clickable {
+                                    quality = key
+                                    EditRoadPrefs.setQuality(context, key)
+                                    EditBatchController.refreshConfig(context)
+                                },
+                            ) {
+                                Text(
+                                    label,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 14.dp, vertical = 7.dp),
+                                )
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(4.dp))
+                    Text(
+                        "当前成片：${EditRoadPrefs.qualityLabel(context)}（长边 ${EditRoadPrefs.outputEdge(context)}px）",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.primary,
+                    )
                 }
             }
 

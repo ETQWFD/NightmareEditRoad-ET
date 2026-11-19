@@ -422,7 +422,7 @@ fun EditScreen(
             ) {
                 Column(Modifier.padding(10.dp)) {
                     Text(
-                        "输出长边 ${s.canvasSize} · ${s.steps} 步 · ${s.rendererLabel}",
+                        "画质 ${s.qualityLabel}（成片 ${s.outputEdge}px）· 原生 ${s.canvasSize}px · ${s.steps} 步 · ${s.rendererLabel}",
                         style = MaterialTheme.typography.labelMedium,
                     )
                     Text(

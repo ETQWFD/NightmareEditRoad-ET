@@ -28,6 +28,7 @@ object EditRoadPrefs {
     const val STEPS_MIN = 10
     const val STEPS_MAX = 100
 
+    const val KEY_QUALITY = "editroad_quality"
     const val KEY_STRENGTH = "editroad_strength"
     const val KEY_NEGATIVE = "editroad_negative"
     const val KEY_AUTOCOMPLETE = "editroad_autocomplete"
@@ -94,6 +95,58 @@ object EditRoadPrefs {
 
     fun setNegativePrompt(context: Context, value: String) {
         prefs(context).edit().putString(KEY_NEGATIVE, value.trim()).apply()
+    }
+
+    const val QUALITY_1K = "1k"
+    const val QUALITY_2K = "2k"
+    const val QUALITY_3K = "3k"
+    const val QUALITY_4K = "4k"
+
+    /** 画质档位（输出长边）。原生扩散尺寸由机型决定，这里只是最终成片的分辨率。 */
+    fun quality(context: Context): String =
+        prefs(context).getString(KEY_QUALITY, QUALITY_1K)
+            ?.takeIf { it in setOf(QUALITY_1K, QUALITY_2K, QUALITY_3K, QUALITY_4K) }
+            ?: QUALITY_1K
+
+    fun setQuality(context: Context, value: String) {
+        if (value !in setOf(QUALITY_1K, QUALITY_2K, QUALITY_3K, QUALITY_4K)) return
+        prefs(context).edit().putString(KEY_QUALITY, value).apply()
+    }
+
+    fun qualityEdge(quality: String): Int = when (quality) {
+        QUALITY_4K -> 4096
+        QUALITY_3K -> 3072
+        QUALITY_2K -> 2048
+        else -> 1024
+    }
+
+    /**
+     * 实际输出长边：想选 4K 但机器存不下（32 位地址空间 / 内存偏小）时自动降档，
+     * 避免保存那一刻 OOM 把整批结果带走。
+     */
+    fun outputEdge(context: Context): Int {
+        val want = qualityEdge(quality(context))
+        val ramGb = io.github.xororz.localdream.utils.DeviceCapabilities
+            .totalRamBytes(context) / (1024L * 1024L * 1024L)
+        val cap = when {
+            !io.github.xororz.localdream.utils.DeviceCapabilities.is64Bit() -> 2048
+            ramGb >= 8L -> 4096
+            ramGb >= 6L -> 3072
+            else -> 2048
+        }
+        return minOf(want, cap)
+    }
+
+    fun qualityLabel(context: Context): String {
+        val edge = outputEdge(context)
+        val label = when (edge) {
+            4096 -> "4K"
+            3072 -> "3K"
+            2048 -> "2K"
+            else -> "1K"
+        }
+        val want = qualityEdge(quality(context))
+        return if (edge < want) "$label（本机上限，已从 ${want / 1024}K 降档）" else label
     }
 
     /** 提示语联想（输入时按中文词/英文标签给出候选）。默认开。 */
