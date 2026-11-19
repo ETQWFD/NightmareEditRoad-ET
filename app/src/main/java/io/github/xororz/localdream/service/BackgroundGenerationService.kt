@@ -477,7 +477,9 @@ class BackgroundGenerationService : Service() {
                 }
                 attemptWidth = cw
                 attemptHeight = ch
-                attemptSteps = 8
+                // NERT：步数不再硬钉 8（8 步出的是糊图，用户写“换成厨房”根本改不动）。
+                // 极低配保留 256 长边这道内存保护线，但步数尊重用户设置，最多 20 步。
+                attemptSteps = minOf(attemptSteps, 20)
                 attemptSampler = "euler_a"
                 io.github.xororz.localdream.cloud.LogHub.log(
                     io.github.xororz.localdream.cloud.LogHub.Category.GENERATE,

@@ -48,7 +48,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
+import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.OutlinedTextField
+import io.github.xororz.localdream.data.EditRoadPrefs
+import io.github.xororz.localdream.util.ChinesePrompt
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -85,7 +92,7 @@ import io.github.xororz.localdream.data.Model
  *  - 失败时弹出带完整日志的窗口，可以“复制日志”或“关闭”；
  *  - 顶部点模型名可以在已下载/已导入的模型之间切换。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditScreen(
     model: Model,
@@ -151,6 +158,29 @@ fun EditScreen(
         if (running) return@LaunchedEffect
         kotlinx.coroutines.delay(15000)
         if (EditBatchController.state.value.note == note) EditBatchController.clearNote()
+    }
+
+    val hasMaskCount = s.queue.count { it.maskPath.isNotBlank() }
+    fun appendTag(base: String, value: String): String {
+        val v = value.trim().trimEnd(',').trim()
+        if (v.isEmpty()) return base
+        if (base.isBlank()) return v
+        return if (base.endsWith(",") || base.endsWith("，")) "$base $v" else "$base, $v"
+    }
+
+    val autocompleteOn = remember(EditRoadPrefs.autocompleteEnabled(context)) { EditRoadPrefs.autocompleteEnabled(context) }
+    var suggestions by remember { mutableStateOf<List<Pair<String, String>>>(emptyList()) }
+    var unknown by remember { mutableStateOf<List<String>>(emptyList()) }
+    LaunchedEffect(s.prompt, autocompleteOn) {
+        if (!autocompleteOn || s.prompt.isBlank()) {
+            suggestions = emptyList()
+            unknown = emptyList()
+            return@LaunchedEffect
+        }
+        kotlinx.coroutines.delay(160)
+        val fragment = s.prompt.split(',', '，', '、', ' ').lastOrNull().orEmpty()
+        suggestions = ChinesePrompt.suggestions(fragment).map { it.first to it.second }
+        unknown = ChinesePrompt.unresolvedWords(s.prompt)
     }
 
     Scaffold(
@@ -311,6 +341,24 @@ fun EditScreen(
                                         )
                                     }
                                 }
+                                // 画笔：只改圈出来的地方，没圈到的像素一定保持原样。
+                                Surface(
+                                    color = if (item.maskPath.isNotBlank()) Color(0xCC1565C0) else Color(0x99000000),
+                                    shape = RoundedCornerShape(topEnd = 10.dp, bottomStart = 10.dp),
+                                    modifier = Modifier.align(Alignment.BottomStart),
+                                ) {
+                                    IconButton(
+                                        onClick = { EditBatchController.openPaint(context, item) },
+                                        modifier = Modifier.size(24.dp),
+                                    ) {
+                                        Icon(
+                                            if (item.maskPath.isNotBlank()) Icons.Default.Check else Icons.Default.Edit,
+                                            contentDescription = "画笔选区",
+                                            tint = Color.White,
+                                            modifier = Modifier.size(13.dp),
+                                        )
+                                    }
+                                }
                             }
                         }
                     }
@@ -328,12 +376,43 @@ fun EditScreen(
                 minLines = 3,
                 maxLines = 6,
             )
+            // 输入联想：打中文或英文都给候选，点一下接上去（设置里可以关掉）。
+            if (autocompleteOn && suggestions.isNotEmpty()) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                    modifier = Modifier.fillMaxWidth(),
+                ) {
+                    suggestions.forEach { (label, value) ->
+                        Surface(
+                            onClick = { EditBatchController.setPrompt(appendTag(s.prompt, value)) },
+                            shape = RoundedCornerShape(50),
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f),
+                            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant),
+                        ) {
+                            Text(
+                                label,
+                                style = MaterialTheme.typography.labelSmall,
+                                modifier = Modifier.padding(horizontal = 9.dp, vertical = 4.dp),
+                            )
+                        }
+                    }
+                }
+            }
             Text(
-                "只写要改成什么就行；尺寸、CFG、重绘强度、防畸形反向词都已按机型配好。" +
+                "只写要改成什么就行；尺寸、CFG、反向词底线按机型配好，重绘强度可在设置里调。" +
                     if (s.prompt.isBlank()) " 留空则只做画质增强，几乎不动人物。" else "",
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
+            if (unknown.isNotEmpty()) {
+                Text(
+                    "这几个词词典没覆盖，可能被忽略：" + unknown.joinToString("、") +
+                        "（换成常见说法，或直接写英文）",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.tertiary,
+                )
+            }
 
             // ---------- 配置摘要 ----------
             Surface(

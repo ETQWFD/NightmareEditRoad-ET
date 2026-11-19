@@ -3,8 +3,8 @@ package io.github.xororz.localdream.data
 import android.content.Context
 
 /**
- * NERT 只暴露少量稳定可调项：步数、渲染器、下载源、CPU 线程。
- * 尺寸、CFG、调度器、反向提示、重绘强度都在代码里按机型配好。
+ * NERT 用户可配置项：步数（默认 40）、渲染器、重绘强度、负面提示语、提示语联想、
+ * 下载源、CPU 线程、语言。尺寸 / CFG / 调度器仍由代码按机型配好，避免误调导致跑不出图。
  */
 object EditRoadPrefs {
     private const val PREFS = "app_prefs"
@@ -28,14 +28,80 @@ object EditRoadPrefs {
     const val STEPS_MIN = 10
     const val STEPS_MAX = 100
 
+    const val KEY_STRENGTH = "editroad_strength"
+    const val KEY_NEGATIVE = "editroad_negative"
+    const val KEY_AUTOCOMPLETE = "editroad_autocomplete"
+    private const val KEY_STEPS_SEEDED = "editroad_steps_seeded_v1"
+
+    // 引擎侧把 strength 夹在 0.3–0.7，这里就用同一区间，避免“设了 0.9 实际只有 0.7”。
+    const val STRENGTH_DEFAULT = 0.55f
+    const val STRENGTH_MIN = 0.30f
+    const val STRENGTH_MAX = 0.70f
+
+    /** 画笔选了区域时用上限：选区外由蒙版保护，选区内要改得动。 */
+    const val STRENGTH_MASKED = 0.70f
+
+    /**
+     * 内置底线反向词：防畸形、防血腥、防丑陋。
+     * 无论用户在设置里怎么改负面提示语，这一段一定会拼上去，不能被关闭。
+     */
+    const val CORE_NEGATIVE =
+        "lowres, worst quality, low quality, blurry, jpeg artifacts, " +
+            "bad anatomy, bad hands, missing fingers, extra fingers, fused fingers, " +
+            "extra limbs, missing limbs, malformed limbs, mutated hands, poorly drawn hands, " +
+            "poorly drawn face, deformed face, deformed, disfigured, mutated, extra eyes, " +
+            "cross-eyed, long neck, ugly, distorted body, " +
+            "blood, blood splatter, gore, wounds, injury, " +
+            "watermark, text, signature, username, logo, cropped, out of frame"
+
+    /** 设置页里预填、可编辑的负面提示语。 */
+    val DEFAULT_NEGATIVE: String = CORE_NEGATIVE
+
     private fun prefs(context: Context) =
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
 
-    fun steps(context: Context): Int =
-        prefs(context).getInt(KEY_STEPS, STEPS_DEFAULT).coerceIn(STEPS_MIN, STEPS_MAX)
+    fun steps(context: Context): Int {
+        val sp = prefs(context)
+        if (!sp.getBoolean(KEY_STEPS_SEEDED, false)) {
+            // 旧棕色版把步数持久化成了 13 之类的小值，升级后同包同名 prefs 会一直带过来。
+            // 首次读到 times 时按“开箱即用”重配一次为 40，之后完全尊重用户在设置里的改动。
+            sp.edit()
+                .putInt(KEY_STEPS, STEPS_DEFAULT)
+                .putBoolean(KEY_STEPS_SEEDED, true)
+                .apply()
+        }
+        return sp.getInt(KEY_STEPS, STEPS_DEFAULT).coerceIn(STEPS_MIN, STEPS_MAX)
+    }
 
     fun setSteps(context: Context, value: Int) {
-        prefs(context).edit().putInt(KEY_STEPS, value.coerceIn(STEPS_MIN, STEPS_MAX)).apply()
+        prefs(context).edit()
+            .putInt(KEY_STEPS, value.coerceIn(STEPS_MIN, STEPS_MAX))
+            .putBoolean(KEY_STEPS_SEEDED, true)
+            .apply()
+    }
+
+    /** 重绘强度：整图修图用这里的值，画笔选区后自动提到 [STRENGTH_MASKED]。 */
+    fun strength(context: Context): Float =
+        prefs(context).getFloat(KEY_STRENGTH, STRENGTH_DEFAULT).coerceIn(STRENGTH_MIN, STRENGTH_MAX)
+
+    fun setStrength(context: Context, value: Float) {
+        prefs(context).edit().putFloat(KEY_STRENGTH, value.coerceIn(STRENGTH_MIN, STRENGTH_MAX)).apply()
+    }
+
+    /** 用户可见可改的负面提示语；实际发送时一定会再拼上 [CORE_NEGATIVE]。 */
+    fun negativePrompt(context: Context): String =
+        prefs(context).getString(KEY_NEGATIVE, null)?.takeIf { it.isNotBlank() } ?: DEFAULT_NEGATIVE
+
+    fun setNegativePrompt(context: Context, value: String) {
+        prefs(context).edit().putString(KEY_NEGATIVE, value.trim()).apply()
+    }
+
+    /** 提示语联想（输入时按中文词/英文标签给出候选）。默认开。 */
+    fun autocompleteEnabled(context: Context): Boolean =
+        prefs(context).getBoolean(KEY_AUTOCOMPLETE, true)
+
+    fun setAutocompleteEnabled(context: Context, value: Boolean) {
+        prefs(context).edit().putBoolean(KEY_AUTOCOMPLETE, value).apply()
     }
 
     fun renderer(context: Context): String =

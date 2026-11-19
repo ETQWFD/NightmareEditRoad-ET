@@ -9,11 +9,11 @@ import os
 
 from PIL import Image, ImageDraw
 
-INK = (16, 22, 28, 255)
+INK = (10, 16, 23, 255)
 ACCENT = (47, 109, 246, 255)
 WHITE = (255, 255, 255, 255)
-DISC = (250, 251, 253, 255)
-STROKE = 62
+DISC = (251, 253, 255, 255)
+STROKE = 86
 BOX = (170, 380, 830, 640)  # letters bounding box, including stroke caps
 
 # (x1, y1, x2, y2) straight strokes, in the 1024 viewport.
@@ -24,7 +24,7 @@ STROKES = [
     (656, 424, 784, 424), (720, 424, 720, 600),                                # T
 ]
 R_BOWL = (549, 468, 29, -90, 90)   # cx, cy, r, a0, a1
-SPARK = (612, 556, 17)              # cx, cy, r
+SPARK = (612, 556, 25)              # cx, cy, r
 
 
 def render(size: int, path: str, transparent: bool = False, margin_scale: float = 1.0) -> None:

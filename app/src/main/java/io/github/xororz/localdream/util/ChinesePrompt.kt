@@ -242,6 +242,180 @@ object ChinesePrompt {
         "与" to "and",
     )
 
+    /**
+     * 405 扩充层：场景 / 动作 / 服装 / 发型 / 光线 / 天气 / 道具。
+     * 这些是用户最常打的整句词，缺一个就会“看起来没按提示语改”。
+     */
+    private val EXTRA: LinkedHashMap<String, String> = linkedMapOf(
+        // 位置与场景
+        "厨房" to "kitchen", "客厅" to "living room", "卧室" to "bedroom", "浴室" to "bathroom",
+        "教室" to "classroom", "图书馆" to "library", "办公室" to "office", "咖啡厅" to "cafe",
+        "咖啡店" to "coffee shop", "便利店" to "convenience store", "超市" to "supermarket",
+        "天台" to "rooftop", "走廊" to "hallway", "楼梯" to "staircase", "电梯" to "elevator",
+        "地铁" to "subway station", "车站" to "train station", "机场" to "airport",
+        "医院" to "hospital", "舞台" to "stage", "废墟" to "ruins", "仓库" to "warehouse",
+        "工厂" to "factory", "实验室" to "laboratory", "教堂" to "church", "寺庙" to "temple",
+        "海边" to "beach, seaside", "沙滩" to "sandy beach", "游泳池" to "swimming pool",
+        "泳池" to "swimming pool", "海滩" to "beach", "湖边" to "lakeside", "河边" to "riverside",
+        "瀑布" to "waterfall", "森林" to "forest, woods", "竹林" to "bamboo forest",
+        "草原" to "grassland, meadow", "花田" to "flower field", "花海" to "sea of flowers",
+        "玫瑰园" to "rose garden", "花园" to "garden", "公园" to "park", "广场" to "plaza",
+        "街道" to "street", "巷子" to "alley", "城市" to "cityscape", "都市夜景" to "city night view",
+        "雪山" to "snowy mountain", "沙漠" to "desert", "火山" to "volcano", "洞穴" to "cave",
+        "稻田" to "rice fields", "麦田" to "wheat field", "樱花树" to "cherry blossom tree",
+        "樱花树下" to "under cherry blossom tree", "树下" to "under a tree",
+        "屋顶" to "rooftop", "阳台" to "balcony", "窗边" to "by the window", "窗台" to "windowsill",
+        "沙发上" to "on the sofa", "床上" to "on the bed", "地板上" to "on the floor",
+        "桌子上" to "on the table", "椅子" to "chair", "秋千" to "swing", "天台边缘" to "rooftop edge",
+        "赛博城市" to "cyberpunk city", "科幻实验室" to "sci-fi laboratory",
+        "中世纪城堡" to "medieval castle", "日式庭院" to "japanese garden",
+        "雪景" to "snowscape, winter", "雨夜街道" to "rainy night street",
+
+        // 动作与姿态
+        "坐着" to "sitting", "坐在" to "sitting on", "跪着" to "kneeling", "蹲着" to "crouching",
+        "躺着" to "lying down", "站着" to "standing", "行走" to "walking", "走路" to "walking",
+        "奔跑" to "running", "跳跃" to "jumping", "回头" to "looking back",
+        "看向镜头" to "looking at camera", "看着镜头" to "looking at viewer",
+        "抬头" to "looking up", "低头" to "looking down", "侧身" to "from side",
+        "双手比心" to "heart hands", "比心" to "heart hands", "双手合十" to "praying, hands together",
+        "托腮" to "chin on hands", "招手" to "waving", "挥手" to "waving",
+        "抱猫" to "holding cat", "抱狗" to "holding dog", "抱着" to "holding",
+        "撑伞" to "holding umbrella", "打伞" to "holding umbrella", "拿伞" to "holding umbrella",
+        "喝水" to "drinking", "喝奶茶" to "drinking bubble tea", "吃东西" to "eating",
+        "吃饭" to "eating", "做饭" to "cooking", "看书" to "reading a book",
+        "玩手机" to "looking at phone", "自拍" to "taking a selfie",
+        "弹吉他" to "playing guitar", "弹钢琴" to "playing piano", "唱歌" to "singing",
+        "跳舞" to "dancing", "画画" to "painting, drawing", "洗澡" to "bathing",
+        "伸懒腰" to "stretching", "摸头" to "head pat", "握手" to "handshake",
+        "飞吻" to "blowing kiss", "眨眼" to "wink", "微笑" to "smile", "大笑" to "laughing",
+        "哭" to "crying, tears", "脸红" to "blush", "惊讶" to "surprised", "生气" to "angry",
+
+        // 服装
+        "女仆装" to "maid outfit, maid headdress", "猫耳女仆" to "cat girl, maid outfit, cat ears",
+        "水手服" to "sailor outfit", "制服" to "school uniform", "校服" to "school uniform",
+        "旗袍" to "china dress, qipao", "和服" to "kimono", "浴衣" to "yukata",
+        "婚纱" to "wedding dress", "礼服" to "evening dress", "西装" to "business suit",
+        "洛丽塔" to "lolita fashion", "哥特" to "gothic fashion",
+        "卫衣" to "hoodie", "毛衣" to "sweater", "白衬衫" to "white shirt",
+        "T恤" to "t-shirt", "短袖" to "short sleeves", "外套" to "jacket",
+        "风衣" to "trench coat", "羽绒服" to "down jacket", "大衣" to "long coat",
+        "连衣裙" to "one-piece dress", "裙子" to "skirt", "百褶裙" to "pleated skirt",
+        "短裤" to "shorts", "牛仔裤" to "jeans", "丝袜" to "stockings",
+        "过膝袜" to "thighhighs", "白丝" to "white thighhighs", "黑丝" to "black thighhighs",
+        "泳装" to "swimsuit", "比基尼" to "bikini", "运动服" to "tracksuit",
+        "盔甲" to "armor", "巫师袍" to "wizard robe", "护士服" to "nurse uniform",
+        "围裙" to "apron", "披风" to "cape", "斗篷" to "cloak",
+        "高跟鞋" to "high heels", "运动鞋" to "sneakers", "靴子" to "boots",
+        "拖鞋" to "slippers", "草帽" to "straw hat", "贝雷帽" to "beret",
+        "帽子" to "hat", "眼镜" to "glasses", "墨镜" to "sunglasses",
+        "耳机" to "headphones", "蝴蝶结" to "ribbon", "发带" to "hair ribbon",
+        "猫耳" to "cat ears", "兽耳" to "animal ears", "猫尾" to "cat tail",
+        "翅膀" to "angel wings", "光环" to "halo", "手套" to "gloves",
+        "项链" to "necklace", "耳环" to "earrings", "铃铛" to "bell",
+
+        // 发型与外貌
+        "短发" to "short hair", "长发" to "long hair", "超长发" to "very long hair",
+        "双马尾" to "double twintails", "单马尾" to "ponytail", "马尾" to "twintails",
+        "卷发" to "curly hair", "直发" to "straight hair", "波浪卷" to "wavy hair",
+        "丸子头" to "bun", "盘发" to "updo", "刘海" to "bangs", "呆毛" to "ahoge",
+        "粉发" to "pink hair", "蓝发" to "blue hair", "银发" to "grey hair, silver hair",
+        "白发" to "white hair", "黑发" to "black hair", "金发" to "blonde hair",
+        "紫发" to "purple hair", "绿发" to "green hair", "红发" to "red hair",
+        "棕发" to "brown hair", "橙发" to "orange hair",
+        "蓝眼" to "blue eyes", "红眼" to "red eyes", "紫眼" to "purple eyes",
+        "绿眼" to "green eyes", "金眼" to "yellow eyes", "异瞳" to "heterochromia",
+        "尖耳朵" to "elf ears", "精灵" to "elf",
+
+        // 光线 / 天气 / 氛围
+        "逆光" to "backlighting", "侧光" to "side lighting", "顶光" to "top lighting",
+        "柔光" to "soft lighting", "硬光" to "hard lighting", "霓虹" to "neon lights",
+        "烛光" to "candlelight", "灯光" to "lighting", "自然光" to "natural light",
+        "晨光" to "morning light", "夕阳" to "sunset", "黄昏" to "dusk, golden hour",
+        "蓝色时刻" to "blue hour", "丁达尔光" to "god rays", "轮廓光" to "rim lighting",
+        "晴天" to "clear sky", "多云" to "cloudy", "阴天" to "overcast",
+        "下雨" to "rain, raining", "雨天" to "rainy day", "雨后" to "after rain",
+        "打雷" to "thunderstorm, lightning", "下雪" to "snow, snowing",
+        "雾" to "fog", "起雾" to "foggy", "星空" to "starry sky, night sky",
+        "夜晚" to "night", "白天" to "daytime", "室内" to "indoors", "户外" to "outdoors",
+        "浅景深" to "shallow depth of field", "模糊背景" to "blurred background",
+
+        // 道具
+        "伞" to "umbrella", "书" to "book", "手机" to "phone", "相机" to "camera",
+        "吉他" to "guitar", "钢琴" to "piano", "电脑" to "computer", "键盘" to "keyboard",
+        "咖啡" to "coffee", "茶杯" to "teacup", "奶茶" to "bubble tea",
+        "蛋糕" to "cake", "冰淇淋" to "ice cream", "面包" to "bread",
+        "花束" to "bouquet", "玫瑰" to "rose", "向日葵" to "sunflower",
+        "气球" to "balloon", "猫" to "cat", "狗" to "dog", "兔子" to "rabbit",
+        "鸟" to "bird", "鱼" to "fish", "蝴蝶" to "butterfly", "蜡烛" to "candle",
+        "礼物" to "present", "行李箱" to "suitcase", "背包" to "backpack",
+        "剑" to "sword", "枪" to "gun", "魔法杖" to "staff, magic wand", "盾牌" to "shield",
+        "滑板" to "skateboard", "自行车" to "bicycle", "汽车" to "car",
+        "摩托车" to "motorcycle", "机器人" to "robot",
+
+        // 句型连接词：把 X 换成 Y / 改成 / 变成 / 加上 / 去掉
+        "换成" to "change to", "改成" to "change to", "改为" to "change to",
+        "变成" to "becomes", "切换为" to "change to", "替换为" to "replace with",
+        "穿上" to "wearing", "戴上" to "wearing", "拿着" to "holding",
+        "加上" to "with", "添加" to "with", "去掉" to "without", "删掉" to "without",
+        "不要" to "without", "没有" to "without",
+        "一只猫" to "a cat", "一把伞" to "an umbrella",
+    )
+
+    /** 长词优先替换，避免“厨房”被“房”提前吃掉。 */
+    private val ALL_PAIRS: List<Pair<String, String>> by lazy {
+        (DICT + EXTRA).entries.sortedByDescending { it.key.length }.map { it.key to it.value }
+    }
+
+    /** 词典也覆盖不了的中文词（会给出提示，让用户改用常见说法或直接写英文）。 */
+    fun unresolvedWords(input: String?): List<String> {
+        val source: String = input?.trim().orEmpty()
+        if (source.isEmpty() || !hasChinese(source)) return emptyList()
+        var work: String = source
+        for ((zh, _) in ALL_PAIRS) {
+            if (work.contains(zh)) work = work.replace(zh, " ")
+        }
+        return work.split(SPLIT)
+            .flatMap { it.split(' ') }
+            .map { it.trim() }
+            .filter { it.isNotEmpty() && hasChinese(it) }
+            .distinct()
+            .take(6)
+    }
+
+    /** 常用英文标签（联想兜底，不依赖外部词库文件）。 */
+    private val COMMON_TAGS = listOf(
+        "1girl", "1boy", "solo", "smile", "looking at viewer", "upper body", "full body",
+        "best quality", "masterpiece", "highly detailed", "sharp focus", "depth of field",
+        "white background", "simple background", "outdoors", "indoors", "day", "night",
+        "long hair", "short hair", "twintails", "bangs", "blue eyes", "pink hair",
+        "school uniform", "maid outfit", "dress", "suit", "kimono", "swimsuit",
+        "sitting", "standing", "kneeling", "lying", "running", "walking", "waving",
+        "holding", "holding umbrella", "heart hands", "reading a book", "drinking",
+        "cherry blossoms", "beach", "forest", "city lights", "cafe", "kitchen", "bedroom",
+        "sunset", "bokeh", "cinematic lighting", "soft lighting", "selfie",
+    )
+
+    /**
+     * 输入联想：按最后一个逗号/空格后的片段给候选（中文词 -> 英文标签）。
+     * 只用本地词典，断网可用，也不需要下载词库文件。
+     */
+    fun suggestions(fragment: String, limit: Int = 10): List<Pair<String, String>> {
+        val q = fragment.trim().lowercase()
+        if (q.isEmpty()) return emptyList()
+        val hits = mutableListOf<Pair<String, String>>()
+        for ((zh, en) in ALL_PAIRS) {
+            if (zh.contains(q) || en.lowercase().contains(q)) hits += zh to en
+            if (hits.size >= limit) break
+        }
+        if (hits.size < limit) {
+            for (tag in COMMON_TAGS) {
+                if (tag.contains(q) && hits.none { it.second == tag }) hits += tag to tag
+                if (hits.size >= limit) break
+            }
+        }
+        return hits
+    }
+
     private val CJK = Regex("[\\u4e00-\\u9fff]")
     // et.45: split ONLY on the user's own punctuation, never on whitespace. Splitting
     // on spaces turned dictionary/MT multi-word phrases like "best quality" /
@@ -260,8 +434,9 @@ object ChinesePrompt {
         if (!hasChinese(input)) return input.trim()
 
         var work: String = input
-        // Replace longest phrases first so e.g. 最高画质 wins over 高质量/画质.
-        for ((zh, en) in DICT) {
+        // Replace longest phrases first so e.g. 最高画质 wins over 高质量/画质，
+        // 且“猫耳女仆”“樱花树下”这类长词不会被短词提前拆掉。
+        for ((zh, en) in ALL_PAIRS) {
             if (work.contains(zh)) work = work.replace(zh, " $en ")
         }
         // Tokenize, drop fragments that still contain CJK (unmapped), keep the rest.

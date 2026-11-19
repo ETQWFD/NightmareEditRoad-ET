@@ -24,7 +24,10 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Block
+import androidx.compose.material.icons.filled.Brush
 import androidx.compose.material.icons.filled.Info
+import androidx.compose.material.icons.filled.TextFields
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.Groups
@@ -35,7 +38,9 @@ import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
@@ -44,6 +49,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -78,6 +84,18 @@ fun EditRoadSettingsScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
     var steps by remember { mutableIntStateOf(EditRoadPrefs.steps(context)) }
+    var strength by remember { mutableFloatStateOf(EditRoadPrefs.strength(context)) }
+    var negative by remember { mutableStateOf(EditRoadPrefs.negativePrompt(context)) }
+    var autocomplete by remember { mutableStateOf(EditRoadPrefs.autocompleteEnabled(context)) }
+    val extremeLowEnd = remember {
+        io.github.xororz.localdream.utils.DeviceCapabilities.extremeLowRam(context)
+    }
+    var forceParams by remember {
+        mutableStateOf(
+            context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                .getBoolean("force_generate", false),
+        )
+    }
     var renderer by remember { mutableStateOf(EditRoadPrefs.renderer(context)) }
     var language by remember { mutableStateOf(currentLanguage(context)) }
     var source by remember { mutableStateOf(EditRoadPrefs.downloadSource(context)) }
@@ -185,6 +203,109 @@ fun EditRoadSettingsScreen(
                 }
             }
 
+            item {
+                SettingsCard(Icons.Default.Brush, "重绘强度") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "改不动就调高，只想微调画质就调低。用画笔圈出区域时会自动按最高强度重画那一块。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Text(
+                            "${(strength * 100).toInt()}%",
+                            fontWeight = FontWeight.Bold,
+                            color = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                    Slider(
+                        value = strength,
+                        onValueChange = {
+                            strength = it
+                            EditRoadPrefs.setStrength(context, it)
+                        },
+                        valueRange = EditRoadPrefs.STRENGTH_MIN..EditRoadPrefs.STRENGTH_MAX,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(0.30f to "只微调", 0.45f to "保守", 0.55f to "推荐", 0.70f to "大改").forEach { (v, name) ->
+                            Surface(
+                                shape = RoundedCornerShape(18.dp),
+                                color = if (kotlin.math.abs(strength - v) < 0.01f) {
+                                    MaterialTheme.colorScheme.primaryContainer
+                                } else {
+                                    MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f)
+                                },
+                                modifier = Modifier.clickable {
+                                    strength = v
+                                    EditRoadPrefs.setStrength(context, v)
+                                },
+                            ) {
+                                Text(
+                                    name,
+                                    style = MaterialTheme.typography.labelMedium,
+                                    modifier = Modifier.padding(horizontal = 11.dp, vertical = 6.dp),
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(Icons.Default.Block, "反推理（负面提示语）") {
+                    Text(
+                        "写在这里，模型会尽量避开这些内容。畸形人物、血腥、丑陋这三条底线是强制生效的，" +
+                            "这里清空也不会失效。",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                    Spacer(Modifier.height(6.dp))
+                    OutlinedTextField(
+                        value = negative,
+                        onValueChange = {
+                            negative = it
+                            EditRoadPrefs.setNegativePrompt(context, it)
+                        },
+                        label = { Text("负面提示语") },
+                        placeholder = { Text("例如：glasses, hat, watermark") },
+                        minLines = 3,
+                        maxLines = 6,
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                    Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                        TextButton(onClick = {
+                            negative = EditRoadPrefs.DEFAULT_NEGATIVE
+                            EditRoadPrefs.setNegativePrompt(context, EditRoadPrefs.DEFAULT_NEGATIVE)
+                        }) { Text("恢复默认") }
+                        TextButton(onClick = {
+                            negative = ""
+                            EditRoadPrefs.setNegativePrompt(context, "")
+                        }) { Text("清空（底线仍生效）") }
+                    }
+                }
+            }
+
+            item {
+                SettingsCard(Icons.Default.TextFields, "提示语联想") {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(
+                            "在修改页输入时给出中文词与英文标签候选，点一下就接上去。关闭后输入框更清爽。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f),
+                        )
+                        Switch(
+                            checked = autocomplete,
+                            onCheckedChange = {
+                                autocomplete = it
+                                EditRoadPrefs.setAutocompleteEnabled(context, it)
+                            },
+                        )
+                    }
+                }
+            }
+
             if (onOpenCpu != null) {
                 item {
                     SettingsCard(Icons.Default.Memory, "CPU 压力 / 线程") {
@@ -193,6 +314,40 @@ fun EditRoadSettingsScreen(
                             subtitle = "打开性能面板：查看 CPU 占用与频率、调整引擎线程数",
                             onClick = { onOpenCpu?.invoke() },
                         )
+                    }
+                }
+            }
+
+            // 32 位 / 内存紧张的机型里，引擎会把长边压到 256、步数最多 20（防 SIGKILL）。
+            // 这里把这层保护显式说明清楚，并允许用户自己决定是否强制按上面的参数跑。
+            if (extremeLowEnd) {
+                item {
+                    SettingsCard(Icons.Default.Memory, "低配机保护") {
+                        Text(
+                            "本机是 32 位 / 内存较小的机型。为避免跑到一半被系统杀掉，" +
+                                "引擎会把输出长边压到 256、步数最多 20。" +
+                                "开启下面这项可以强制按你设置的步数与尺寸跑，但可能中途闪退。",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                "强制按上面的参数跑",
+                                style = MaterialTheme.typography.bodyMedium,
+                                modifier = Modifier.weight(1f),
+                            )
+                            Switch(
+                                checked = forceParams,
+                                onCheckedChange = { on ->
+                                    forceParams = on
+                                    context.getSharedPreferences("app_prefs", android.content.Context.MODE_PRIVATE)
+                                        .edit()
+                                        .putBoolean("force_generate", on)
+                                        .putBoolean("force_generate_confirmed", true)
+                                        .apply()
+                                },
+                            )
+                        }
                     }
                 }
             }

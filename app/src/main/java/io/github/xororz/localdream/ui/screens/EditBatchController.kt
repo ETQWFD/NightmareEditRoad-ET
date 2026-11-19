@@ -64,8 +64,17 @@ object EditBatchController {
      * 队列项使用本地文件路径，而不是相册的 content:// Uri。
      * 相册 Uri 的读取授权只在当前进程有效，熄屏或进程被回收后就读不到，
      * 表现为“选好的图和结果突然被删掉”。选图时立刻把缩放后的图落到本地文件。
+     *
+     * [maskPath] 是画笔选区生成的蒙版（同一尺寸的 PNG，白=要重画）；空串表示整图修图。
      */
-    data class QueueItem(val path: String, val name: String, val thumb: Bitmap?, val readable: Boolean)
+    data class QueueItem(
+        val path: String,
+        val name: String,
+        val thumb: Bitmap?,
+        val readable: Boolean,
+        val maskPath: String = "",
+        val maskThumb: Bitmap? = null,
+    )
 
     data class Failure(val title: String, val detail: String, val log: String)
 
@@ -89,6 +98,8 @@ object EditBatchController {
         val engineLoadMs: Long = 0L,
         val overheadMs: Long = 0L,
         val steps: Int = EditRoadPrefs.STEPS_DEFAULT,
+        val strength: Float = EditRoadPrefs.STRENGTH_DEFAULT,
+        val negativePrompt: String = EditRoadPrefs.DEFAULT_NEGATIVE,
         val canvasSize: Int = 384,
         val rendererLabel: String = "",
         val gpu: Boolean = false,
@@ -103,11 +114,15 @@ object EditBatchController {
 
     private const val TAG = "EditBatch"
     private const val PREFS = "app_prefs"
-    private const val KEY_MS_PER_STEP = "editroad_ms_per_step"
-    private const val KEY_CALIB = "editroad_step_calib_v2"
-    private const val KEY_OVERHEAD = "editroad_overhead_ms"
+    // v2：旧键里存过被时间戳污染的小值（导致“预计每张约 19 秒”），换键名等于一次性作废。
+    private const val KEY_MS_PER_STEP = "editroad_ms_per_step_v2"
+    private const val KEY_CALIB = "editroad_step_calib_v3"
+    private const val KEY_OVERHEAD = "editroad_overhead_ms_v2"
 
     private const val QUEUE_DIR = "editroad/queue"
+    // 蒙版单独放一个目录：attach() 开机清扫队列目录时只认 img_*.jpg，
+    // 混在一起会把选区文件当垃圾删掉。
+    private const val MASK_DIR = "editroad/mask"
     private const val JOB_FILE = "editroad/job.json"
 
     private const val MAX_IMAGES = 16
@@ -117,7 +132,9 @@ object EditBatchController {
     private const val THUMB_EDGE = 480
     private const val CFG = 7f
     private const val SCHEDULER = "dpm"
-    private const val DENOISE = 0.45f
+
+    // 重绘强度不再写死：整图修图用设置里的值（默认 0.55），画笔选区后自动用上限 0.70。
+    // 旧值 0.45 太保守，用户写“把场景换成厨房”时模型基本改不动，看起来就是“没按提示修”。
     private const val DENOISE_BLANK = 0.30f
 
     private const val ENGINE_READY_MS = 200_000L
@@ -128,13 +145,22 @@ object EditBatchController {
     private const val DEFAULT_POSITIVE =
         "masterpiece, best quality, highly detailed, sharp focus, correct anatomy, natural lighting"
 
-    /** 内置防畸形反向词，用户不需要也不能自己填。 */
-    private const val ANTI_DEFORM_NEGATIVE =
-        "lowres, worst quality, low quality, blurry, jpeg artifacts, bad anatomy, bad hands, " +
-            "missing fingers, extra fingers, fused fingers, extra limbs, missing limbs, " +
-            "malformed limbs, mutated hands, poorly drawn hands, poorly drawn face, deformed face, " +
-            "disfigured, mutated, extra eyes, cross-eyed, long neck, watermark, text, signature, " +
-            "username, logo, cropped, out of frame"
+    /**
+     * 组装最终反向词：用户在设置里写的 + 内置底线（畸形 / 血腥 / 丑陋一定包含）。
+     * 用户把设置清空也拿不掉底线，这是需求里明确要求的“禁止生成畸形人物、血腥、丑陋”。
+     */
+    private fun buildNegative(userNegative: String): String {
+        val core = EditRoadPrefs.CORE_NEGATIVE
+        val user = userNegative.trim().trimEnd(',').trim()
+        if (user.isBlank()) return core
+        val coreSet = core.split(",").map { it.trim().lowercase() }.toSet()
+        val extra = user.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() && it.lowercase() !in coreSet }
+            .distinct()
+            .joinToString(", ")
+        return if (extra.isBlank()) core else "$core, $extra"
+    }
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
     private val _state = MutableStateFlow(State())
@@ -160,6 +186,8 @@ object EditBatchController {
             s.copy(
                 modelId = modelId,
                 steps = steps,
+                strength = EditRoadPrefs.strength(context),
+                negativePrompt = EditRoadPrefs.negativePrompt(context),
                 rendererLabel = EditRoadPrefs.rendererLabel(context),
                 gpu = gpu,
                 canvasSize = canvas,
@@ -207,6 +235,9 @@ object EditBatchController {
 
     private fun queueDir(context: Context): File =
         File(context.filesDir, QUEUE_DIR).apply { runCatching { mkdirs() } }
+
+    private fun maskDir(context: Context): File =
+        File(context.filesDir, MASK_DIR).apply { runCatching { mkdirs() } }
 
     private fun jobFile(context: Context): File = File(context.filesDir, JOB_FILE)
 
@@ -276,14 +307,147 @@ object EditBatchController {
 
     fun removeImage(path: String) {
         if (_state.value.running) return
+        val item = _state.value.queue.firstOrNull { it.path == path }
         _state.update { it.copy(queue = it.queue.filterNot { q -> q.path == path }) }
         runCatching { File(path).takeIf { f -> f.isFile }?.delete() }
+        item?.maskPath?.takeIf { it.isNotBlank() }?.let { m ->
+            runCatching { File(m).takeIf { f -> f.isFile }?.delete() }
+        }
+    }
+
+    /**
+     * 保存某张图的画笔选区蒙版（base64 PNG 文本，尺寸与该图一致）。
+     * 有蒙版时引擎只重画圈出来的区域，其余像素保持不变。
+     */
+    fun setMask(context: Context, path: String, maskBase64: String, maskThumb: Bitmap?) {
+        if (_state.value.running) return
+        val app = context.applicationContext
+        val file = File(maskDir(app), "m_${System.currentTimeMillis()}.txt")
+        val ok = runCatching {
+            file.writeText(maskBase64)
+            file.length() > 0L
+        }.getOrDefault(false)
+        if (!ok) {
+            _state.update { it.copy(note = "蒙版写入失败（存储空间可能已满）") }
+            return
+        }
+        val old = _state.value.queue.firstOrNull { it.path == path }?.maskPath
+        _state.update { s ->
+            s.copy(
+                queue = s.queue.map { q ->
+                    if (q.path != path) q else q.copy(maskPath = file.absolutePath, maskThumb = maskThumb)
+                },
+            )
+        }
+        // 换选区后旧蒙版没用了，马上删掉，避免私有目录里堆垃圾。
+        old?.takeIf { it.isNotBlank() && it != file.absolutePath }?.let { m ->
+            runCatching { File(m).takeIf { f -> f.isFile }?.delete() }
+        }
+        ModelHolder.current?.let { persistJob(app, it, _state.value.queue, _state.value.prompt, running = false) }
+    }
+
+    /** 一次画笔编辑会话（由 EditRoadShell 顶层渲染，避免被底部 Dock 盖住）。 */
+    data class PaintSession(
+        val path: String,
+        val bitmap: Bitmap,
+        val preview: Bitmap?,
+        val history: List<PathData>,
+    )
+
+    private val _paint = MutableStateFlow<PaintSession?>(null)
+    val paint: StateFlow<PaintSession?> = _paint.asStateFlow()
+
+    /** 打开画笔：返回 false 表示这张图读不出来。 */
+    fun openPaint(context: Context, item: QueueItem): Boolean {
+        if (_state.value.running) {
+            _state.update { it.copy(note = "修图进行中，先停止再改选区") }
+            return false
+        }
+        val bmp = canvasBitmapForMask(context, item.path) ?: run {
+            _state.update { it.copy(note = "这张图读不出来，换一张再试") }
+            return false
+        }
+        _paint.value = PaintSession(
+            path = item.path,
+            bitmap = bmp,
+            preview = if (item.maskPath.isNotBlank()) decodeMaskBitmap(item.maskPath) else null,
+            history = emptyList(),
+        )
+        return true
+    }
+
+    fun closePaint() {
+        _paint.value = null
+    }
+
+    /** 画笔确认：存蒙版并关闭面板。 */
+    fun completePaint(
+        context: Context,
+        path: String,
+        maskBase64: String,
+        maskThumb: Bitmap?,
+        history: List<PathData>,
+    ) {
+        _paint.value = null
+        setMask(context, path, maskBase64, maskThumb)
+        _state.update { it.copy(note = "选区已保存：这张只会重画圈出来的地方") }
+    }
+
+    /** 给界面一条明确反馈（选区保存、词典未命中之类）。 */
+    fun setNote(context: Context, text: String) {
+        _state.update { it.copy(note = text) }
+    }
+
+    /** 蒙版文件里存的是 base64 PNG，这里解回位图供画笔继续编辑。 */
+    fun decodeMaskBitmap(path: String): Bitmap? {
+        val b64 = runCatching { File(path).readText() }.getOrNull() ?: return null
+        val bytes = runCatching { android.util.Base64.decode(b64.trim(), android.util.Base64.DEFAULT) }.getOrNull()
+            ?: return null
+        return runCatching { BitmapFactory.decodeByteArray(bytes, 0, bytes.size) }.getOrNull()
+    }
+
+    /** 供画笔使用：把队列图按当前输出尺寸缩放后返回（蒙版必须与它同尺寸）。 */
+    fun canvasBitmapForMask(context: Context, path: String): Bitmap? {
+        val canvas = _state.value.canvasSize
+        val src = decodeLocalBitmap(path, THUMB_EDGE) ?: return null
+        if (canvas <= 0) return src
+        val hi = maxOf(src.width, src.height)
+        if (hi <= canvas) return src
+        val scale = canvas.toFloat() / hi
+        val w = ((src.width * scale).toInt().coerceAtLeast(8) / 8) * 8
+        val h = ((src.height * scale).toInt().coerceAtLeast(8) / 8) * 8
+        val dst = Bitmap.createScaledBitmap(src, w, h, true)
+        if (dst !== src) src.recycle()
+        return dst
+    }
+
+    /** 位图 -> 引擎要的 base64 PNG（无换行）。 */
+    fun bitmapToBase64Png(bmp: Bitmap): String {
+        val out = java.io.ByteArrayOutputStream()
+        bmp.compress(Bitmap.CompressFormat.PNG, 100, out)
+        return android.util.Base64.encodeToString(out.toByteArray(), android.util.Base64.NO_WRAP)
+    }
+
+    /** 清掉某张图的选区，回到整图修图。 */
+    fun clearMask(context: Context, path: String) {
+        if (_state.value.running) return
+        val item = _state.value.queue.firstOrNull { it.path == path }
+        _state.update { s ->
+            s.copy(queue = s.queue.map { q -> if (q.path == path) q.copy(maskPath = "", maskThumb = null) else q })
+        }
+        item?.maskPath?.takeIf { it.isNotBlank() }?.let { m ->
+            runCatching { File(m).takeIf { f -> f.isFile }?.delete() }
+        }
+        ModelHolder.current?.let { persistJob(context.applicationContext, it, _state.value.queue, _state.value.prompt, running = false) }
     }
 
     fun clearImages(context: Context) {
         if (_state.value.running) return
         val app = context.applicationContext
-        _state.value.queue.forEach { q -> runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() } }
+        _state.value.queue.forEach { q ->
+            runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() }
+            if (q.maskPath.isNotBlank()) runCatching { File(q.maskPath).takeIf { f -> f.isFile }?.delete() }
+        }
         clearJob(app)
         _state.update {
             it.copy(
@@ -312,7 +476,6 @@ object EditBatchController {
             return
         }
         refreshConfig(app)
-        val paths = items.map { it.path }
         val promptText = _state.value.prompt
         _state.update {
             it.copy(
@@ -326,8 +489,8 @@ object EditBatchController {
         }
         BatteryOptimization.ensureIgnoring(app)
         engineLoadSampleMs = 0L
-        persistJob(app, model, paths, 0, promptText, running = true)
-        job = scope.launch { runBatch(app, model, paths, promptText, 0) }
+        persistJob(app, model, items, promptText, running = true)
+        job = scope.launch { runBatch(app, model, items, promptText) }
     }
 
     /** 上次被系统打断的队列已恢复，直接点“开始修图”就能接着跑完剩下的张。 */
@@ -336,7 +499,10 @@ object EditBatchController {
     /** 用户主动放弃上次没跑完的那批：删掉临时图与清单，界面回到空队列。 */
     fun discardResume(context: Context) {
         val app = context.applicationContext
-        _state.value.queue.forEach { q -> runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() } }
+        _state.value.queue.forEach { q ->
+            runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() }
+            if (q.maskPath.isNotBlank()) runCatching { File(q.maskPath).takeIf { f -> f.isFile }?.delete() }
+        }
         clearJob(app)
         _state.update {
             it.copy(
@@ -357,10 +523,10 @@ object EditBatchController {
             EditKeepAliveService.finish(app, "NERT 空闲")
             return
         }
-        val rest = _state.value.queue.map { it.path }.drop(_state.value.done + 1)
+        val rest = _state.value.queue.drop(_state.value.done + 1)
         _state.update { it.copy(running = false, stage = "已停止", pendingResume = rest.size) }
         runCatching { BackgroundGenerationService.stop(app) }
-        ModelHolder.current?.let { persistJob(app, it, rest, 0, _state.value.prompt, running = false) }
+        ModelHolder.current?.let { persistJob(app, it, rest, _state.value.prompt, running = false) }
         EditKeepAliveService.finish(app, "已停止，剩余 ${rest.size} 张可以继续")
         job?.let { current ->
             job = null
@@ -371,28 +537,31 @@ object EditBatchController {
     private suspend fun runBatch(
         app: Context,
         model: Model,
-        items: List<String>,
+        items: List<QueueItem>,
         promptText: String,
-        startIndex: Int,
     ) {
         val steps = EditRoadPrefs.steps(app)
         val useOpenCL = EditRoadPrefs.wantsGpu(app)
         val canvas = DeviceCapabilities.sd15LongEdgeForRam(app)
-        val denoise = if (promptText.isBlank()) DENOISE_BLANK else DENOISE
+        // 强度：留空只做画质增强（低强度）；写了提示语就用设置里的强度（默认 0.55，能真的改得动）。
+        val denoise = if (promptText.isBlank()) DENOISE_BLANK else EditRoadPrefs.strength(app)
+        val userNegative = EditRoadPrefs.negativePrompt(app)
         val history = HistoryManager(app)
         runCatching { LogCapture.start() }
 
         Log.i(
             TAG,
             "batch start model=${model.id} type=${model.backendType} images=${items.size} " +
-                "steps=$steps gpu=$useOpenCL canvas=$canvas from=$startIndex",
+                "steps=$steps gpu=$useOpenCL canvas=$canvas strength=$denoise",
         )
         _state.update {
             it.copy(
                 running = true,
                 failure = null,
                 total = items.size,
-                done = startIndex,
+                done = 0,
+                strength = denoise,
+                negativePrompt = userNegative,
                 progress = 0f,
                 preview = null,
                 results = emptyList(),
@@ -410,14 +579,15 @@ object EditBatchController {
             )
         }
         ModelHolder.current = model
-        EditKeepAliveService.start(app, "正在准备引擎 · 共 ${items.size} 张", startIndex, items.size)
+        EditKeepAliveService.start(app, "正在准备引擎 · 共 ${items.size} 张", 0, items.size)
 
         var stopped = false
         var failed = false
         var finished = 0
         var galleryFailures = 0
         try {
-            for ((index, path) in items.withIndex()) {
+            for ((index, queueItem) in items.withIndex()) {
+                val path = queueItem.path
                 if (!_state.value.running) {
                     stopped = true
                     break
@@ -437,7 +607,7 @@ object EditBatchController {
                     val msg = "第 ${index + 1} 张的本地文件读不到（可能存储空间被清理），已跳过"
                     _state.update { it.copy(done = it.done + 1, note = msg) }
                     LogHub.log(LogHub.Category.GENERATE, "queue file missing: $path")
-                    persistJob(app, model, items.drop(index + 1), 0, promptText, _state.value.running)
+                    persistJob(app, model, items.drop(index + 1), promptText, _state.value.running)
                     continue
                 }
                 val scaled = scaleToCanvas(decoded, canvas)
@@ -487,7 +657,11 @@ object EditBatchController {
                     break
                 }
 
-                when (val outcome = generateOne(app, model, promptText, scaled, steps, denoise, useOpenCL)) {
+                when (val outcome = generateOne(
+                    app, model, promptText, scaled, steps, denoise, useOpenCL,
+                    maskPath = queueItem.maskPath,
+                    userNegative = userNegative,
+                )) {
                     is GenOutcome.Done -> {
                         val bitmap = outcome.bitmap
                         val elapsed = System.currentTimeMillis() - _state.value.currentStartedAt
@@ -506,7 +680,7 @@ object EditBatchController {
                                         cfg = CFG,
                                         seed = outcome.seed,
                                         prompt = promptText.ifBlank { DEFAULT_POSITIVE },
-                                        negativePrompt = ANTI_DEFORM_NEGATIVE,
+                                        negativePrompt = buildNegative(userNegative),
                                         generationTime = "${elapsed / 1000}s",
                                         width = bitmap.width,
                                         height = bitmap.height,
@@ -557,8 +731,11 @@ object EditBatchController {
                         BackgroundGenerationService.clearCompleteState()
                         // 这张已经完成：把队列文件删掉，避免占存储；清单同步剩余张数。
                         runCatching { File(path).takeIf { f -> f.isFile }?.delete() }
+                        if (queueItem.maskPath.isNotBlank()) {
+                            runCatching { File(queueItem.maskPath).takeIf { f -> f.isFile }?.delete() }
+                        }
                         val rest = items.drop(index + 1)
-                        persistJob(app, model, rest, 0, promptText, running = rest.isNotEmpty())
+                        persistJob(app, model, rest, promptText, running = rest.isNotEmpty())
                         EditKeepAliveService.update(
                             app,
                             "已完成 ${index + 1}/${items.size} 张",
@@ -614,17 +791,21 @@ object EditBatchController {
             }
             if (!stopped && !failed) {
                 // 整批跑完：清理队列文件与清单。
-                items.forEach { p -> runCatching { File(p).takeIf { f -> f.isFile }?.delete() } }
+                items.forEach { q ->
+                    runCatching { File(q.path).takeIf { f -> f.isFile }?.delete() }
+                    if (q.maskPath.isNotBlank()) runCatching { File(q.maskPath).takeIf { f -> f.isFile }?.delete() }
+                }
                 clearJob(app)
                 _state.update { it.copy(queue = emptyList(), pendingResume = 0) }
             } else {
                 val rest = items.drop(doneNow)
-                persistJob(app, model, rest, 0, promptText, running = false)
+                persistJob(app, model, rest, promptText, running = false)
                 // 队列只留没跑完的那些：中途完成的图片文件已删，
                 // 若继续留在队列里，重启后再点开始会把它们当成待修图片重复计数。
+                val restPaths = rest.map { it.path }.toSet()
                 _state.update {
                     it.copy(
-                        queue = it.queue.filter { q -> q.path in rest },
+                        queue = it.queue.filter { q -> q.path in restPaths },
                         pendingResume = rest.size,
                         total = rest.size,
                         done = 0,
@@ -654,8 +835,7 @@ object EditBatchController {
     private fun persistJob(
         app: Context,
         model: Model,
-        remaining: List<String>,
-        done: Int,
+        remaining: List<QueueItem>,
         prompt: String,
         running: Boolean,
     ) {
@@ -663,12 +843,15 @@ object EditBatchController {
             val obj = JSONObject()
                 .put("modelId", model.id)
                 .put("prompt", prompt)
-                .put("done", done)
                 .put("running", running)
                 .put("updatedAt", System.currentTimeMillis())
                 .put(
                     "queue",
-                    JSONArray().apply { remaining.filter { it.isNotBlank() }.forEach { put(it) } },
+                    JSONArray().apply { remaining.map { it.path }.filter { it.isNotBlank() }.forEach { put(it) } },
+                )
+                .put(
+                    "masks",
+                    JSONArray().apply { remaining.map { it.maskPath }.forEach { put(it) } },
                 )
             val file = jobFile(app)
             file.parentFile?.mkdirs()
@@ -696,7 +879,14 @@ object EditBatchController {
         }.orEmpty().filter { it.isNotBlank() }
         val running = parsed.optBoolean("running", false)
         val prompt = parsed.optString("prompt")
-        val existing = paths.filter { p -> File(p).isFile && p.startsWith(queueDir(app).absolutePath) }
+        val masks = parsed.optJSONArray("masks")?.let { arr ->
+            (0 until arr.length()).map { arr.optString(it) }
+        }.orEmpty()
+        val pairs = paths.mapIndexed { i, p -> p to masks.getOrElse(i) { "" } }
+        val existing = pairs.filter { (p, m) ->
+            p.startsWith(queueDir(app).absolutePath) && File(p).isFile &&
+                (m.isBlank() || (m.startsWith(maskDir(app).absolutePath) && File(m).isFile))
+        }
         if (existing.isEmpty()) {
             clearJob(app)
             if (running) {
@@ -704,9 +894,10 @@ object EditBatchController {
             }
             return
         }
-        val queue = existing.map { p ->
+        val queue = existing.map { (p, m) ->
             val bmp = runCatching { decodeLocalBitmap(p, THUMB_EDGE) }.getOrNull()
-            QueueItem(p, File(p).name, bmp, true)
+            val maskBmp = if (m.isNotBlank()) decodeMaskBitmap(m) else null
+            QueueItem(p, File(p).name, bmp, true, m, maskBmp)
         }
         val model = io.github.xororz.localdream.data.ModelRepository.getInstance(app)
             .models.firstOrNull { it.id == modelId }
@@ -845,6 +1036,8 @@ object EditBatchController {
         steps: Int,
         denoise: Float,
         useOpenCL: Boolean,
+        maskPath: String,
+        userNegative: String,
     ): GenOutcome {
         BackgroundGenerationService.resetState()
 
@@ -861,28 +1054,45 @@ object EditBatchController {
 
         val w = source.width
         val h = source.height
+        val masked = maskPath.isNotBlank() && File(maskPath).isFile
+        if (masked) {
+            runCatching { File(maskPath).readText().let { base64Mask ->
+                FileOutputStream(File(app.filesDir, "mask.txt")).use { it.write(base64Mask.toByteArray()) }
+            } }
+        } else {
+            runCatching { File(app.filesDir, "mask.txt").takeIf { f -> f.isFile }?.delete() }
+        }
         val port = EnginePort.activeEnginePort(app)
         val intent = Intent(app, BackgroundGenerationService::class.java).apply {
             putExtra("prompt", translated ?: positive)
-            putExtra("negative_prompt", ANTI_DEFORM_NEGATIVE)
+            putExtra("negative_prompt", buildNegative(userNegative))
             putExtra("steps", steps)
             putExtra("cfg", CFG)
             putExtra("width", w)
             putExtra("height", h)
             putExtra("effective_width", w)
             putExtra("effective_height", h)
-            putExtra("denoise_strength", denoise)
+            putExtra("denoise_strength", if (masked) EditRoadPrefs.STRENGTH_MASKED else denoise)
             putExtra("use_opencl", useOpenCL)
             putExtra("scheduler", SCHEDULER)
             putExtra("aspect_ratio", ImageDiagnostics.aspectRatioFor(w, h))
             putExtra("has_image", true)
+            // 画笔选区：有蒙版时只重画圈出来的地方，其余像素保持不变。
+            if (masked) {
+                putExtra("has_mask", true)
+            }
             putExtra("modelId", model.id)
             putExtra("backendType", model.backendType)
             putExtra("backend_host", "localhost:$port")
             putExtra("prompt_pretranslated", translated != null)
             putExtra("prompt_english_only", true)
         }
-        _state.update { it.copy(stage = "修图中 ${w}×$h · $steps 步") }
+        _state.update {
+            it.copy(
+                stage = "修图中 ${w}×$h · $steps 步 · " +
+                    if (masked) "只改圈出区域" else "整图重绘 ${(denoise * 100).toInt()}%",
+            )
+        }
         val startError = runCatching { app.startForegroundService(intent) }.exceptionOrNull()
         if (startError != null) {
             Log.e(TAG, "start generation failed", startError)
@@ -1156,7 +1366,10 @@ object EditBatchController {
         val p = s.progress
         val modelThisRemaining = (perImage - elapsed).coerceAtLeast(0L)
         val thisRemaining = if (p > 0.08f && elapsed > 4_000L) {
-            val extrapolated = ((elapsed.toDouble() / p) * (1.0 - p)).toLong().coerceIn(0L, perImage * 3)
+            // 这里绝不能按“模型预估的 3 倍”夹住：首次估算偏小时，
+            // 就会出现实际跑了 5 分钟却显示“预计剩余 41 秒”。
+            val extrapolated = ((elapsed.toDouble() / p) * (1.0 - p)).toLong()
+                .coerceIn(0L, 4L * 3600L * 1000L)
             val w = (p * 1.6).coerceAtMost(0.85)
             (extrapolated * w + modelThisRemaining * (1.0 - w)).toLong()
         } else {

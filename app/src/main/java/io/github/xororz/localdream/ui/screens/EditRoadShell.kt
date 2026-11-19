@@ -29,6 +29,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -147,6 +148,28 @@ fun EditRoadShell() {
 
             KeepAliveLayer(visible = showCpu) {
                 CpuPressureScreen(active = true, bottomPadding = 104.dp)
+            }
+
+            // 画笔选区面板画在最上层（zIndex 3 > Dock 的 2），工具栏不会被 Dock 挡住。
+            val paint by EditBatchController.paint.collectAsState()
+            paint?.let { session ->
+                Box(
+                    Modifier
+                        .fillMaxSize()
+                        .zIndex(3f),
+                ) {
+                    InpaintScreen(
+                        originalBitmap = session.bitmap,
+                        existingMaskBitmap = session.preview,
+                        existingPathHistory = session.history,
+                        onInpaintComplete = { maskBase64, _, maskBmp, history ->
+                            EditBatchController.completePaint(
+                                context, session.path, maskBase64, maskBmp, history,
+                            )
+                        },
+                        onCancel = { EditBatchController.closePaint() },
+                    )
+                }
             }
 
             GlassDock(

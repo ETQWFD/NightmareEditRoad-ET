@@ -112,8 +112,14 @@
         <p>本地 <code>.safetensors</code> / <code>.ckpt</code> 在手机里直接转换，或粘贴 HuggingFace 链接下载。导入的模型与下载模型一样能进入修图页。</p></div>
       <div class="card"><span class="tag">修图页</span><h3>顶部点模型名即可切换</h3>
         <p>下载或导入多个模型后，在修图页顶部打开列表切换；修图进行中禁止切换，避免引擎与模型不匹配。</p></div>
-      <div class="card"><span class="tag">步数</span><h3>默认 40，可自设到 100</h3>
-        <p>出厂即配置好尺寸、CFG、重绘强度与防畸形反向词，用户只需要写提示语和调步数。</p></div>
+      <div class="card"><span class="tag">步数与强度</span><h3>默认 40 步，强度可调</h3>
+        <p>尺寸、CFG、调度器出厂配好；步数（10–100）与重绘强度（30%–70%）由你决定。改不动就调高，只想微调画质就调低。</p></div>
+      <div class="card"><span class="tag">画笔选区</span><h3>只改你圈出来的地方</h3>
+        <p>修改页每张图都有画笔。圈住要改的区域，圈外像素保持原样；选区会随任务保存，熄屏、切页、被系统回收都能接着跑。</p></div>
+      <div class="card"><span class="tag">中文 / English</span><h3>提示语直接写中文</h3>
+        <p>本地词典覆盖场景、动作、服装、发型、光线、道具约 300 条，输入时还有联想候选；词典没覆盖的词会明确告诉你，不再悄悄丢掉。</p></div>
+      <div class="card"><span class="tag">反向词</span><h3>畸形、血腥、丑陋是底线</h3>
+        <p>设置里的「反推理（负面提示语）」可以自己加词或清空，但畸形人物、血腥、丑陋这三条始终强制生效，关不掉。</p></div>
       <div class="card"><span class="tag">界面</span><h3>白色半透明玻璃</h3>
         <p>弃用动态取色，固定冷白板 + 毛玻璃卡片；底部常驻四栏：模型 / 历史 / 修改 / 设置，右上角入口取消。</p></div>
       <div class="card"><span class="tag">性能</span><h3>低 / 中 / 高配都能加速</h3>

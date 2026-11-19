@@ -85,13 +85,30 @@ fun CpuPressureScreen(active: Boolean, bottomPadding: Dp = 104.dp) {
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
         var prev = readCpuTimes()
+        var prevProc = readProcessCpuTicks()
+        var prevElapsed = android.os.SystemClock.elapsedRealtime()
         while (true) {
             delay(1000)
             val now = readCpuTimes()
             val dTotal = now[0] - prev[0]
             val dIdle = now[1] - prev[1]
-            if (dTotal > 0) usage = ((dTotal - dIdle).toFloat() / dTotal).coerceIn(0f, 1f)
+            val elapsedMs = android.os.SystemClock.elapsedRealtime() - prevElapsed
+            // 通道一：整系统占用。部分机型 /proc/stat 对普通应用返回空，会得到 0。
+            val sysUsage = if (dTotal > 0) ((dTotal - dIdle).toFloat() / dTotal) else -1f
+            // 通道二：本进程 CPU tick 差值。修图引擎线程就跑在本进程里，
+            // 所以 /proc/stat 读不到时，这里依然能真实反映“有没有在算”。
+            val nowProc = readProcessCpuTicks()
+            val dProc = nowProc - prevProc
+            val procUsage = if (dProc > 0L && elapsedMs > 0L) {
+                dProc.toFloat() / (elapsedMs / 1000f * 100f) / allCores
+            } else {
+                -1f
+            }
+            val candidates = listOf(sysUsage, procUsage).filter { it >= 0f }
+            usage = (candidates.maxOrNull() ?: 0f).coerceIn(0f, 1f)
             prev = now
+            prevProc = nowProc
+            prevElapsed = android.os.SystemClock.elapsedRealtime()
             freqText = readFreqText(allCores)
             tempC = readTemperature()
         }
@@ -279,6 +296,16 @@ private fun GlassCard(content: @Composable androidx.compose.foundation.layout.Co
     ) {
         Column(Modifier.padding(14.dp), content = content)
     }
+}
+
+/** 本进程消耗的 CPU tick（utime + stime），100 tick/秒。 */
+private fun readProcessCpuTicks(): Long {
+    return runCatching {
+        val stat = File("/proc/self/stat").readText()
+        val fields = stat.substringAfterLast(')').trim().split(Regex("\\s+"))
+        // ')' 之后：0=state … 11=utime 12=stime
+        (fields[11].toLong() + fields[12].toLong()).coerceAtLeast(0L)
+    }.getOrDefault(-1L)
 }
 
 private fun readCpuTimes(): LongArray {
